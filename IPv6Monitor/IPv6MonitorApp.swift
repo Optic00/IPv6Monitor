@@ -503,56 +503,97 @@ struct ConnectivityView: View {
         }
     }
     
-    enum PingType { case ipv4, ipv6 }
+    nonisolated enum PingType: Equatable { case ipv4, ipv6 }
     
-    func ping(host: String, type: PingType, completion: @escaping (Double) -> Void) {
+    nonisolated func ping(host: String, type: PingType, completion: @escaping (Double) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
             let cleanHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-            
+
             // WICHTIG: Strikte Trennung.
             // IPv4 -> /sbin/ping
-            // IPv6 -> /sbin/ping6 (oft robuster bei Link-Local und Sandboxing-Restriktionen)
-            let binary = (type == .ipv6) ? "/sbin/ping6" : "/sbin/ping"
-            
-            if !FileManager.default.fileExists(atPath: binary) {
-                // Fallback falls ping6 nicht existiert (sehr neue macOS Versionen)
-                runPingCommand(binary: "/sbin/ping", host: cleanHost, completion: completion)
-                return
+            // IPv6 -> /sbin/ping6 (robuster bei Link-Local). Fallback: /sbin/ping -6
+            var binary = (type == .ipv6) ? "/sbin/ping6" : "/sbin/ping"
+            var args: [String] = ["-c", "1", "-n", cleanHost]
+
+            if type == .ipv6 {
+                if !FileManager.default.fileExists(atPath: binary) {
+                    // Fallback falls ping6 nicht existiert: ping -6
+                    binary = "/sbin/ping"
+                    args = ["-6", "-c", "1", "-n", cleanHost]
+                }
             }
-            
-            runPingCommand(binary: binary, host: cleanHost, completion: completion)
+
+            runPingCommand(binary: binary, arguments: args, isIPv6: (type == .ipv6), completion: completion)
         }
     }
     
-    func runPingCommand(binary: String, host: String, completion: @escaping (Double) -> Void) {
+    nonisolated func runPingCommand(binary: String, arguments: [String], isIPv6: Bool, completion: @escaping (Double) -> Void) {
         let task = Process()
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe() // Fehler ignorieren
+        let stdout = Pipe()
+        let stderr = Pipe()
+
+        task.standardOutput = stdout
+        task.standardError = stderr
         task.launchPath = binary
-        // Argumente: -c 1 (Count), -n (No DNS), -W 1000 (Timeout 1s)
-        // Bei manchen ping6 Versionen ist -i oder -W anders, aber macOS Standard ist konsistent.
-        task.arguments = ["-c", "1", "-n", "-W", "1000", host]
-        
-        do {
-            try task.run()
+        // Verwenden die vorbereiteten Argumente (ohne -W). Timeout manuell.
+        task.arguments = arguments
+
+        let timeoutSeconds: TimeInterval = 1.5
+        let start = Date()
+
+        var terminated = false
+
+        let terminationObserver = NotificationCenter.default.addObserver(forName: Process.didTerminateNotification, object: task, queue: nil) { _ in
+            terminated = true
+        }
+
+        func finish(with value: Double) {
+            NotificationCenter.default.removeObserver(terminationObserver)
+            completion(value)
+        }
+
+        DispatchQueue.global().async {
+            do {
+                try task.run()
+            } catch {
+                finish(with: -1.0)
+                return
+            }
+
+            while !terminated {
+                if Date().timeIntervalSince(start) > timeoutSeconds {
+                    task.terminate()
+                    break
+                }
+                usleep(20_000) // 20ms
+            }
+
             task.waitUntilExit()
+
+            let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+            _ = stderr.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: outputData, encoding: .utf8) ?? ""
+
             if task.terminationStatus == 0 {
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                if let output = String(data: data, encoding: .utf8),
-                   let range = output.range(of: "time=([0-9.]+)", options: .regularExpression) {
+                // Versuche verschiedene Patterns für die Zeit
+                if let range = output.range(of: "time=([0-9.]+)", options: .regularExpression) {
                     let timeStr = String(output[range]).replacingOccurrences(of: "time=", with: "")
-                    if let time = Double(timeStr) {
-                        completion(time)
-                        return
+                    if let time = Double(timeStr) { finish(with: time); return }
+                }
+                // Manche Varianten geben z.B. "round-trip min/avg/max/stddev = 9.902/9.902/9.902/0.000 ms"
+                if let _ = output.range(of: "avg/max/", options: .regularExpression) {
+                    // Fallback: parse die erste gefundene Zahl in ms
+                    if let numRange = output.range(of: "([0-9]+\\.[0-9]+|[0-9]+) ms", options: .regularExpression) {
+                        let numStr = String(output[numRange]).replacingOccurrences(of: " ms", with: "")
+                        if let time = Double(numStr) { finish(with: time); return }
                     }
                 }
-                completion(0.0) // Erfolg, aber Zeit nicht parsbar
+                // Erfolg, aber Zeit nicht parsbar
+                finish(with: 0.0)
             } else {
-                completion(-1.0) // Fehler
+                // Timeout oder Fehler
+                finish(with: -1.0)
             }
-        } catch {
-            completion(-1.0)
         }
     }
 }
@@ -656,3 +697,4 @@ struct InterfaceSelectionView: View {
         let task = Process(); let pipe = Pipe(); task.standardOutput = pipe; task.launchPath = "/bin/bash"; task.arguments = ["-c", command]; try? task.run(); task.waitUntilExit(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); return String(data: data, encoding: .utf8) ?? ""
     }
 }
+
