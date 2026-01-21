@@ -1,3 +1,5 @@
+// Vibecoded
+
 import SwiftUI
 import AppKit
 import SystemConfiguration
