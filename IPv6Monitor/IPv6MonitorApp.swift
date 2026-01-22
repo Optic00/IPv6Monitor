@@ -237,8 +237,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Vergleiche Interface
             if primaryInterface == interface {
                 // IP Vergleich (Scope ID %... entfernen für Vergleich)
-                let dbRouterClean = currentRouter.components(separatedBy: "%”).first!
-                let targetRouterClean = cleanIP.components(separatedBy: "%”).first!
+                let dbRouterClean = currentRouter.components(separatedBy: "%").first!
+                let targetRouterClean = cleanIP.components(separatedBy: "%").first!
 
                 if dbRouterClean == targetRouterClean {
                     routeValid = true
@@ -613,14 +613,14 @@ struct ConnectivityView: View {
 
             if task.terminationStatus == 0 {
                 // Versuche verschiedene Patterns für die Zeit
-                if let range = output.range(of: "time=([0-9.]+)", options: .regularExpression) {
+                if let range = output.range(of: #"time=([0-9.]+)"#, options: .regularExpression) {
                     let timeStr = String(output[range]).replacingOccurrences(of: "time=", with: "")
                     if let time = Double(timeStr) { finish(with: time); return }
                 }
                 // Manche Varianten geben z.B. "round-trip min/avg/max/stddev = 9.902/9.902/9.902/0.000 ms"
-                if let _ = output.range(of: "avg/max/", options: .regularExpression) {
+                if let _ = output.range(of: #"avg/max/"#, options: .regularExpression) {
                     // Fallback: parse die erste gefundene Zahl in ms
-                    if let numRange = output.range(of: "([0-9]+\.[0-9]+|[0-9]+) ms", options: .regularExpression) {
+                    if let numRange = output.range(of: #"([0-9]+\.[0-9]+|[0-9]+) ms"#, options: .regularExpression) {
                         let numStr = String(output[numRange]).replacingOccurrences(of: " ms", with: "")
                         if let time = Double(numStr) { finish(with: time); return }
                     }
@@ -651,8 +651,12 @@ struct LogView: View {
                     }
                     .id(entry.id)
                 }
-                .onChange(of: logger.entries.count) {
-                    if let last = logger.entries.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                .onChange(of: logger.entries.count) { _ in
+                    if let last = logger.entries.last {
+                        withAnimation {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
                 }
             }
             Divider()
@@ -765,3 +769,4 @@ struct InterfaceSelectionView: View {
         }
     }
 }
+
