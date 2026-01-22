@@ -74,12 +74,58 @@ struct LogEntry: Identifiable {
 
 class Logger: ObservableObject {
     @Published var entries: [LogEntry] = []
+    private var logFileURL: URL?
+    private let fileQueue = DispatchQueue(label: "org.ipv6monitor.logqueue")
+
+    init() {
+        setupLogFile()
+    }
+
+    private func setupLogFile() {
+        guard let libraryDir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
+        let logDir = libraryDir.appendingPathComponent("Logs/IPv6Monitor")
+        
+        do {
+            try FileManager.default.createDirectory(at: logDir, withIntermediateDirectories: true, attributes: nil)
+            logFileURL = logDir.appendingPathComponent("IPv6Monitor.log")
+        } catch {
+            print("Failed to create log directory: \(error)")
+        }
+    }
 
     func add(_ message: String, type: LogType = .info) {
+        let entry = LogEntry(date: Date(), message: message, type: type)
+        
+        // UI Update
         DispatchQueue.main.async {
-            let entry = LogEntry(date: Date(), message: message, type: type)
             self.entries.append(entry)
             if self.entries.count > 500 { self.entries.removeFirst() }
+        }
+        
+        // File Write
+        fileQueue.async { [weak self] in
+            self?.appendToFile(entry.fullLogString)
+        }
+    }
+    
+    private func appendToFile(_ line: String) {
+        guard let url = logFileURL, let data = (line + "\n").data(using: .utf8) else { return }
+        
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                let fileHandle = try FileHandle(forWritingTo: url)
+                if #available(macOS 10.15.4, *) {
+                    try fileHandle.seekToEnd()
+                } else {
+                    fileHandle.seekToEndOfFile()
+                }
+                fileHandle.write(data)
+                try fileHandle.close()
+            } else {
+                try data.write(to: url)
+            }
+        } catch {
+            print("Error writing to log file: \(error)")
         }
     }
 
@@ -122,7 +168,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         updateIcon(status: .neutral)
 
-        logger.add("App gestartet.", type: .info)
+        logger.add(NSLocalizedString("App started.", comment: ""), type: .info)
 
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -147,11 +193,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         pathMonitor?.cancel()
 
         guard let interface = currentInterface else { return }
-        logger.add("Überwachung: \(interface)", type: .info)
+        logger.add(String(format: NSLocalizedString("Monitoring: %@", comment: ""), interface), type: .info)
 
         self.routerIP = findRouterIP(interface: interface)
         if let ip = routerIP {
-            logger.add("Router IP: \(ip)", type: .success)
+            logger.add(String(format: NSLocalizedString("Router IP: %@", comment: ""), ip), type: .success)
         }
 
         checkRoute(logSuccess: false)
@@ -168,7 +214,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func wakeUpCheck() {
-        logger.add("System Wakeup.", type: .info)
+        logger.add(NSLocalizedString("System Wakeup.", comment: ""), type: .info)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             self.checkRoute(logSuccess: true)
         }
@@ -237,8 +283,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Vergleiche Interface
             if primaryInterface == interface {
                 // IP Vergleich (Scope ID %... entfernen für Vergleich)
-                let dbRouterClean = currentRouter.components(separatedBy: "%").first!
-                let targetRouterClean = cleanIP.components(separatedBy: "%").first!
+                let dbRouterClean = currentRouter.components(separatedBy: "%" ).first!
+                let targetRouterClean = cleanIP.components(separatedBy: "%" ).first!
 
                 if dbRouterClean == targetRouterClean {
                     routeValid = true
@@ -248,35 +294,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if routeValid {
             updateIcon(status: .ok)
-            if logSuccess { logger.add("Route Prüfung: OK", type: .success) }
+            if logSuccess { logger.add(NSLocalizedString("Route check: OK", comment: ""), type: .success) }
         } else {
-            logger.add("❌ Route verloren! Starte Reparatur...", type: .error)
+            logger.add(NSLocalizedString("❌ Route lost! Starting repair...", comment: ""), type: .error)
             updateIcon(status: .error)
             fixRoute(routerIP: cleanIP, interface: interface)
         }
     }
 
-    func fixRoute(routerIP: String, interface: String) {
-        let cleanIP = routerIP.trimmingCharacters(in: .whitespacesAndNewlines)
-        let command = "route -n add -inet6 default \(cleanIP)%\(interface)"
-        let appleScript = "do shell script \"\(command)\" with administrator privileges"
-
-        var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: appleScript) {
-            scriptObject.executeAndReturnError(&error)
-            if error == nil {
-                logger.add("✅ Route repariert", type: .success)
+        func fixRoute(routerIP: String, interface: String) {
+            let cleanIP = routerIP.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Use 'sudo -n' (non-interactive).
+            // Requires the user to add an entry to /etc/sudoers allowing this command without password.
+            let command = "/usr/bin/sudo -n /sbin/route -n add -inet6 default \(cleanIP)%\(interface)"
+            
+            let exitCode = shellExitCode(command)
+            
+            if exitCode == 0 {
+                logger.add(NSLocalizedString("✅ Route repaired", comment: ""), type: .success)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     self.checkRoute(logSuccess: true)
                 }
             } else {
-                logger.add("⚠️ Reparatur fehlgeschlagen: \(String(describing: error))", type: .error)
+                logger.add(String(format: NSLocalizedString("⚠️ Repair failed (Code %d).", comment: ""), exitCode), type: .error)
+                logger.add(NSLocalizedString("ℹ️ See README for sudoers setup.", comment: ""), type: .warning)
             }
         }
-    }
-
-    // MARK: - Fenster Management
-
+        
+        // MARK: - Fenster Management
     func openInterfaceSelectionWindow() {
         if settingsWindow != nil { settingsWindow?.makeKeyAndOrderFront(nil); return }
 
@@ -294,7 +340,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered, defer: false
         )
         window.center()
-        window.title = "Interface wählen"
+        window.title = NSLocalizedString("Select Interface", comment: "")
         window.contentView = NSHostingView(rootView: contentView)
         window.isReleasedWhenClosed = false
 
@@ -314,7 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 400), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         window.center()
-        window.title = "Protokoll"
+        window.title = NSLocalizedString("Log", comment: "")
         window.contentView = NSHostingView(rootView: contentView)
         window.isReleasedWhenClosed = false
 
@@ -340,7 +386,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 400), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.center()
-        window.title = "Verbindungs-Check"
+        window.title = NSLocalizedString("Connectivity Check", comment: "")
         window.contentView = NSHostingView(rootView: contentView)
         window.isReleasedWhenClosed = false
 
@@ -410,20 +456,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async {
             let menu = NSMenu()
 
-            let interfaceTitle = self.currentInterface != nil ? "Interface: \(self.currentInterface!)" : "Kein Interface"
+            let interfaceTitle = self.currentInterface != nil ? String(format: NSLocalizedString("Interface: %@", comment: ""), self.currentInterface!) : NSLocalizedString("No Interface", comment: "")
             menu.addItem(NSMenuItem(title: interfaceTitle, action: nil, keyEquivalent: ""))
 
             if let rIP = self.routerIP {
-                menu.addItem(NSMenuItem(title: "Router: \(rIP)", action: nil, keyEquivalent: ""))
+                menu.addItem(withTitle: String(format: NSLocalizedString("Router: %@", comment: ""), rIP), action: nil, keyEquivalent: "")
             }
 
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Verbindungs-Check", action: #selector(self.manualCheck), keyEquivalent: "r"))
-            menu.addItem(NSMenuItem(title: "Protokoll anzeigen...", action: #selector(self.openLogWindow), keyEquivalent: "l"))
-            menu.addItem(NSMenuItem(title: "Interface ändern...", action: #selector(self.changeInterface), keyEquivalent: "i"))
+            menu.addItem(NSMenuItem(title: NSLocalizedString("Connectivity Check", comment: ""), action: #selector(self.manualCheck), keyEquivalent: "r"))
+            menu.addItem(NSMenuItem(title: NSLocalizedString("Show Log...", comment: ""), action: #selector(self.openLogWindow), keyEquivalent: "l"))
+            menu.addItem(NSMenuItem(title: NSLocalizedString("Change Interface...", comment: ""), action: #selector(self.changeInterface), keyEquivalent: "i"))
 
             menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "Beenden", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+            menu.addItem(NSMenuItem(title: NSLocalizedString("Quit", comment: ""), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 
             self.statusItem?.menu = menu
         }
@@ -452,17 +498,16 @@ struct ConnectivityView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Ziel").frame(width: 120, alignment: .leading).bold()
-                Text("IPv4 (ms)").frame(maxWidth: .infinity, alignment: .leading).bold()
-                Text("IPv6 (ms)").frame(maxWidth: .infinity, alignment: .leading).bold()
+                Text(NSLocalizedString("Target", comment: "")).frame(width: 120, alignment: .leading).bold()
+                Text(NSLocalizedString("IPv4 (ms)", comment: "")).frame(maxWidth: .infinity, alignment: .leading).bold()
+                Text(NSLocalizedString("IPv6 (ms)", comment: "")).frame(maxWidth: .infinity, alignment: .leading).bold()
             }
             .padding()
             .background(Color.gray.opacity(0.1))
 
             Divider()
 
-            List(results) {
-                res in
+            List(results) { res in
                 HStack {
                     Text(res.targetName).frame(width: 120, alignment: .leading).font(.system(.body, design: .monospaced))
                     Text(res.v4Latency).frame(maxWidth: .infinity, alignment: .leading).foregroundColor(res.v4Color).font(.system(.body, design: .monospaced))
@@ -474,9 +519,9 @@ struct ConnectivityView: View {
             Divider()
 
             HStack {
-                Button("Neu prüfen") { runTests() }
+                Button(NSLocalizedString("Check Again", comment: "")) { runTests() }
                 Spacer()
-                Text("Timeout: 1s").font(.caption).foregroundColor(.secondary)
+                Text(NSLocalizedString("Timeout: 1s", comment: "")).font(.caption).foregroundColor(.secondary)
             }
             .padding()
         }
@@ -493,11 +538,11 @@ struct ConnectivityView: View {
             PingTarget(name: "Quad9", ipv4: "9.9.9.9", ipv6: "2620:fe::fe"),
             PingTarget(name: "OpenDNS", ipv4: "208.67.222.222", ipv6: "2620:119:35::35")
         ]
-
+        
         let cleanRouterIP = routerIPv6.trimmingCharacters(in: .whitespacesAndNewlines)
         let v6Address: String
         if !cleanRouterIP.isEmpty {
-            if cleanRouterIP.contains("%" ) {
+            if cleanRouterIP.contains("%") {
                 v6Address = cleanRouterIP
             } else {
                 v6Address = "\(cleanRouterIP)%\(interface)"
@@ -505,8 +550,8 @@ struct ConnectivityView: View {
         } else {
             v6Address = "-"
         }
-
-        let routerTarget = PingTarget(name: "Gateway", ipv4: routerIPv4, ipv6: v6Address, isRouter: true)
+        
+        let routerTarget = PingTarget(name: NSLocalizedString("Gateway", comment: ""), ipv4: routerIPv4, ipv6: v6Address, isRouter: true)
         t.insert(routerTarget, at: 0)
         self.targets = t
     }
@@ -530,12 +575,12 @@ struct ConnectivityView: View {
     func updateResult(index: Int, v4: Double? = nil, v6: Double? = nil) {
         if let val = v4 {
             if val == -2 { results[index].v4Latency = "-"; results[index].v4Color = .secondary }
-            else if val < 0 { results[index].v4Latency = "Timeout"; results[index].v4Color = .red }
+            else if val < 0 { results[index].v4Latency = NSLocalizedString("Timeout", comment: ""); results[index].v4Color = .red }
             else { results[index].v4Latency = String(format: "%.0f", val); results[index].v4Color = .green }
         }
         if let val = v6 {
             if val == -2 { results[index].v6Latency = "-"; results[index].v6Color = .secondary }
-            else if val < 0 { results[index].v6Latency = "Timeout"; results[index].v6Color = .red }
+            else if val < 0 { results[index].v6Latency = NSLocalizedString("Timeout", comment: ""); results[index].v6Color = .red }
             else { results[index].v6Latency = String(format: "%.0f", val); results[index].v6Color = .green }
         }
     }
@@ -642,8 +687,7 @@ struct LogView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
-                List(logger.entries) {
-                    entry in
+                List(logger.entries) { entry in
                     HStack(alignment: .top) {
                         Text(entry.formattedTime).font(.system(.caption, design: .monospaced)).foregroundColor(.secondary)
                         Text(entry.message).foregroundColor(entry.type.color).font(.system(.body, design: .monospaced))
@@ -651,21 +695,17 @@ struct LogView: View {
                     }
                     .id(entry.id)
                 }
-                .onChange(of: logger.entries.count) { _ in
-                    if let last = logger.entries.last {
-                        withAnimation {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
+                .onChange(of: logger.entries.count) {
+                    if let last = logger.entries.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                 }
             }
             Divider()
             HStack {
-                Text("\(logger.entries.count) Einträge").font(.caption).foregroundColor(.secondary)
+                Text(String(format: NSLocalizedString("%d Entries", comment: ""), logger.entries.count)).font(.caption).foregroundColor(.secondary)
                 Spacer()
                 Button(action: {
                     let pasteboard = NSPasteboard.general; pasteboard.clearContents(); pasteboard.setString(logger.getCopyString(), forType: .string)
-                }) { Label("Log kopieren", systemImage: "doc.on.doc") }
+                }) { Label(NSLocalizedString("Copy Log", comment: ""), systemImage: "doc.on.doc") }
             }
             .padding().background(Color(NSColor.windowBackgroundColor))
         }
@@ -683,26 +723,25 @@ struct InterfaceSelectionView: View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
                 Image(systemName: "network.badge.shield.half.filled").font(.system(size: 40)).foregroundColor(.blue).padding(.top, 20)
-                Text("Interface Überwachung").font(.title2).bold()
-                Text("Wählen Sie das Interface mit Internetverbindung.").font(.caption).foregroundColor(.secondary)
+                Text(NSLocalizedString("Interface Monitoring", comment: "")).font(.title2).bold()
+                Text(NSLocalizedString("Select the interface with internet connection.", comment: "")).font(.caption).foregroundColor(.secondary)
             }
             .padding(.bottom, 20)
             Divider()
-            if isLoading { Spacer(); ProgressView("Analysiere Netzwerk..."); Spacer() } else {
-                List(interfaces) {
-                    iface in
+            if isLoading { Spacer(); ProgressView(NSLocalizedString("Analyzing network...", comment: "")); Spacer() } else {
+                List(interfaces) { iface in
                     HStack(alignment: .center) {
                         Image(systemName: iconName(for: iface.displayName)).font(.title2).frame(width: 30).foregroundColor(iface.isLikelyPrimary ? .blue : .gray)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack {
                                 Text(iface.displayName).font(.headline)
-                                if iface.isLikelyPrimary { Text("AKTIV").font(.system(size: 10, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.8)).foregroundColor(.white).cornerRadius(8) }
+                                if iface.isLikelyPrimary { Text(NSLocalizedString("ACTIVE", comment: "")).font(.system(size: 10, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.green.opacity(0.8)).foregroundColor(.white).cornerRadius(8) }
                                 if iface.hasIPv6 { Text("IPv6").font(.system(size: 10, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.blue.opacity(0.2)).foregroundColor(.blue).cornerRadius(8) }
                             }
                             Text("BSD: \(iface.bsdName)").font(.caption).foregroundColor(.gray)
                         }
                         Spacer()
-                        Button("Wählen") { onSelect(iface.bsdName) }.buttonStyle(.borderedProminent).tint(iface.isLikelyPrimary ? .blue : .gray.opacity(0.5))
+                        Button(NSLocalizedString("Select", comment: "")) { onSelect(iface.bsdName) }.buttonStyle(.borderedProminent).tint(iface.isLikelyPrimary ? .blue : .gray.opacity(0.5))
                     }
                     .padding(.vertical, 4)
                 }
@@ -769,4 +808,3 @@ struct InterfaceSelectionView: View {
         }
     }
 }
-
