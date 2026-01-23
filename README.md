@@ -37,9 +37,11 @@ To ensure the monitor runs automatically:
 3.  Click the `+` button under "Open at Login".
 4.  Select `IPv6Monitor.app`.
 
-## Headless / Server Setup (sudoers)
+## Sudoers Configuration
 
-This application is designed to run on servers where the IPv6 default route might drop unexpectedly. To allow the app to automatically repair the route without user interaction (password prompt), you must configure `sudoers`.
+This tool is designed to work automatically in the background without user intervention. Since modifying the system routing table requires root privileges, the app needs a way to run the `route` command as root.
+
+To avoid the extreme complexity of privileged helpers and the associated code signing requirements (which usually require a paid Apple Developer account), this tool uses `sudo`. A one-time setup in your `sudoers` configuration is required to allow the app to fix the route without prompting for a password.
 
 ### Configuration
 
