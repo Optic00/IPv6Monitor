@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- macOS Squircle Background -->
+  <rect x="100" y="100" width="824" height="824" rx="180" fill="url(#bg_gradient)" />
+  
+  <!-- Shadow for depth -->
+  <path d="M250 512 L774 512" stroke="rgba(0,0,0,0.2)" stroke-width="20" stroke-linecap="round" transform="translate(0, 20)" opacity="0.3" />
+
+  <!-- Network / Globe Stylized -->
+  <circle cx="512" cy="512" r="320" stroke="white" stroke-width="60" stroke-opacity="0.9" fill="none" />
+  <path d="M512 192 V832 M192 512 H832" stroke="white" stroke-width="40" stroke-opacity="0.6" stroke-linecap="round" />
+  <path d="M300 300 L724 724 M724 300 L300 724" stroke="white" stroke-width="20" stroke-opacity="0.4" stroke-linecap="round" />
+
+  <!-- Central "v6" Badge -->
+  <circle cx="512" cy="512" r="180" fill="white" />
+  
+  <!-- Text "v6" -->
+  <text x="512" y="590" font-family="-apple-system, Helvetica Neue, sans-serif" font-weight="bold" font-size="220" text-anchor="middle" fill="#007AFF">v6</text>
+
+  <!-- Gradient Definition -->
+  <defs>
+    <linearGradient id="bg_gradient" x1="100" y1="100" x2="924" y2="924" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#00C6FF" />
+      <stop offset="1" stop-color="#0072FF" />
+    </linearGradient>
+  </defs>
+</svg>

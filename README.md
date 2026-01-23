@@ -1,6 +1,6 @@
 # IPv6Monitor
 
-Tool to monitor the IPv6 default route on macOS and reacquire it as needed.
+Tool to monitor the IPv6 default route on macOS and reacquire it as needed. It runs as a status item in the menu bar and does not show an icon in the Dock.
 
 ## Rationale
 
@@ -33,7 +33,7 @@ This application is open-source and intended to be built from source. You do **n
 ### Run on Startup
 To ensure the monitor runs automatically:
 1.  Open **System Settings**.
-2.  Go to **General > Login Items**.
+2.  Go to **General > Login Items & Extensions**.
 3.  Click the `+` button under "Open at Login".
 4.  Select `IPv6Monitor.app`.
 
