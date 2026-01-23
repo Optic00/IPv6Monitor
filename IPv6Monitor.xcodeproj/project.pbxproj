@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		952361B92F22D56C008FF3CA /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		B5DFBBB72F2149D200F55DB7 /* IPv6Monitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IPv6Monitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -32,6 +33,7 @@
 		B5DFBBAE2F2149D200F55DB7 = {
 			isa = PBXGroup;
 			children = (
+				952361B92F22D56C008FF3CA /* README.md */,
 				B5DFBBB92F2149D200F55DB7 /* IPv6Monitor */,
 				B5DFBBB82F2149D200F55DB7 /* Products */,
 			);
@@ -91,6 +93,7 @@
 			knownRegions = (
 				en,
 				Base,
+				de,
 			);
 			mainGroup = B5DFBBAE2F2149D200F55DB7;
 			minimizedProjectReferenceProxies = 1;
@@ -260,6 +263,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -291,6 +295,7 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
