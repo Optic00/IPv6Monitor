@@ -61,7 +61,8 @@ struct LogEntry: Identifiable {
 
   var formattedTime: String {
     let formatter = DateFormatter()
-    formatter.dateFormat = "HH:mm:ss"
+    formatter.dateStyle = .short
+    formatter.timeStyle = .medium
     return formatter.string(from: date)
   }
 
