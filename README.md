@@ -4,11 +4,22 @@ Tool to monitor the IPv6 default route on macOS and reacquire it as needed. It r
 
 ## Rationale
 
-This tool was created to address a persistent issue where macOS sporadically loses its IPv6 default route, resulting in "No route to host" errors for any IPv6 traffic outside the local network.
+This tool was created to address a persistent issue where macOS sporadically loses its IPv6 default route, resulting in "No route to host" errors for IPv6 traffic outside the local network.
 
-This behavior has been frequently observed in environments using **Ubiquiti UniFi** gateways (like the UCG-Ultra or UDM), though it may occur with other equipment. The root cause appears to be a race condition in the macOS networking stack triggered by the presence of multiple IPv6 routers on the LAN—specifically when devices acting as Thread Border Routers (like Apple TVs, HomePods, or IoT hubs) broadcast Router Advertisements (RAs) alongside the main gateway.
+The issue appears intermittently and is difficult to reproduce on demand. It has been observed on multiple Apple Silicon Macs and across different network interfaces, including Wi-Fi, built-in Ethernet, and external USB-C Ethernet adapters. Sometimes the network remains stable for several days; at other times the route disappears repeatedly within minutes after a reboot.
 
-When this happens, macOS incorrectly drops the default route, breaking IPv6 connectivity until the route is manually restored or the interface is cycled. This tool automates that restoration process.
+In captured failure states, macOS still had valid IPv6 state everywhere except in the kernel routing table:
+
+* The active interface still had valid global IPv6 addresses.
+* `SystemConfiguration` still reported the correct IPv6 router for the active interface.
+* `ndp -r` still listed the same router as a default router with remaining lifetime.
+* Packet captures still showed valid Router Advertisements from the main gateway, including a non-zero router lifetime and high router preference.
+* `scutil --nwi` still reported IPv6 on the interface as reachable.
+* But `route -n get -inet6 default` returned `not in table`, and `netstat -rn -f inet6` showed no IPv6 default route via the active LAN/Wi-Fi interface.
+
+This has been seen in networks where a normal IPv6 gateway advertises the internet default route while Apple Thread Border Routers, such as Apple TV and HomePod mini devices, also send Router Advertisements with Route Information Options for ULA prefixes. Those Thread Border Router advertisements use router lifetime `0`, meaning they should not become default routers themselves. The suspected bug is that macOS sometimes ends up with an inconsistent IPv6 state: Neighbor Discovery and SystemConfiguration still know the default router, but the kernel default route is missing.
+
+When this happens, IPv6 connectivity is broken until the route is manually restored or the interface is cycled. This tool automates the restoration process by detecting the missing default route and re-adding it.
 
 **References:**
 *   [Reddit: macOS losing IPv6 default route](https://www.reddit.com/r/MacOS/comments/1mpefc1/macos_losing_ipv6_default_route/)
