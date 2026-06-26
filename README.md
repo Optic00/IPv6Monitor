@@ -93,3 +93,22 @@ To verify the setup works on modern macOS (Darwin 24+ / macOS 15+):
 The app monitors the routing table using the SystemConfiguration API and by verifying the kernel routing table directly. If the default IPv6 route is missing:
 1.  It attempts to discover the router using `ndp` (Neighbor Discovery Protocol) if not found via API.
 2.  It executes `sudo -n /sbin/route add ...` to restore the route.
+
+## Diagnostics
+
+The primary goal of the diagnostics is to gather evidence about *why* the route is lost (e.g. to support an Apple Feedback report), since the trigger is multiple Router Advertisement (RA) senders on the LAN.
+
+*   **RA sender panel** (Connectivity Check window): lists every IPv6 default router the kernel learned via RAs on the monitored interface, with its preference (`high`/`medium`/`low`) and remaining lifetime (`expire`). More than one router is highlighted as a warning, since that is the documented bug trigger.
+*   **Loss forensics:** on every route loss the app writes a timestamped diagnostic snapshot to `~/Library/Logs/IPv6Monitor/` (`ndp`, `netstat`, `ifconfig`, `scutil`, recent `configd`/`networkd` logs, …) and logs a compact, greppable line capturing the lifetime of each RA sender at the moment of loss:
+    ```
+    RA@loss total=8 high=[29m50s] medium=[1h59m55s,…] low=[]
+    ```
+    Collected over many losses, this shows whether losses correlate with the `high`-preference gateway's RA lifetime lapsing.
+*   **Interface picker:** the interface that carries the default route *and* has a global-unicast IPv6 address is marked **Recommended** and sorted to the top. The `IPv6` badge now reflects a real global address (not merely a link-local one).
+*   **Log window:** full-text search, filtering by type, an "events only" toggle that hides the recurring route-OK heartbeat, and date separators.
+
+The log directory can be opened any time via the menu (**Export Diagnostics… / ⌘E**).
+
+### Note on device identification
+
+Identifying the RA senders by MAC/vendor is intentionally **not** included: macOS masks neighbor-cache link-layer addresses (`ndp -an` returns `2:0:0:0:0:0`) for the hardened GUI app, and the relevant Thread Border Routers use rotating RFC 7217 privacy addresses, so reliable attribution is not possible without elevated privileges.
