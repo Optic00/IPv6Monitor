@@ -740,11 +740,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       "\(tag) total=\(routers.count) high=[\(expires("high"))] medium=[\(expires("medium"))] low=[\(expires("low"))]"
   }
 
-  // AP7: Boot-Baseline. Beim Start einmal den vollständigen IPv6-Router-/Route-Zustand festhalten
-  // (datierte `RA@boot`-Zeile + `startup-…`-Snapshot), um „saubere" vs. „fragile" Boots zu vergleichen
-  // (sporadischer Verlust hängt vermutlich an der Boot-Konvergenz der Default-Router-Liste).
-  // Läuft im Hintergrund, da die Diagnose-Befehle ein paar Sekunden brauchen.
+  // Zeitfenster nach System-Boot, in dem ein App-Start als „frisch gebootet" gilt.
+  // Nur dann ist die Boot-Baseline diagnostisch sinnvoll (Konvergenz der Default-Router-Liste);
+  // ein bloßer App-Neustart Stunden später soll keinen Snapshot erzeugen.
+  private let freshBootWindow: TimeInterval = 600  // 10 Minuten
+
+  // Wall-clock-Sekunden seit System-Boot via `kern.boottime` (robust gegen Sleep, anders als
+  // ProcessInfo.systemUptime, das nur die Wachzeit zählt).
+  private func secondsSinceBoot() -> TimeInterval {
+    var mib = [CTL_KERN, KERN_BOOTTIME]
+    var bootTime = timeval()
+    var size = MemoryLayout<timeval>.stride
+    guard sysctl(&mib, 2, &bootTime, &size, nil, 0) == 0, bootTime.tv_sec != 0 else {
+      return .infinity  // unbekannt -> NICHT als frisch werten
+    }
+    let boot = TimeInterval(bootTime.tv_sec) + TimeInterval(bootTime.tv_usec) / 1_000_000
+    return Date().timeIntervalSince1970 - boot
+  }
+
+  // AP7: Boot-Baseline. Nur kurz nach echtem System-Boot den vollständigen IPv6-Router-/Route-Zustand
+  // festhalten (datierte `RA@boot`-Zeile + `startup-…`-Snapshot), um „saubere" vs. „fragile" Boots zu
+  // vergleichen. Läuft im Hintergrund, da die Diagnose-Befehle ein paar Sekunden brauchen.
   func captureStartupBaseline(interface: String) {
+    let uptime = secondsSinceBoot()
+    guard uptime <= freshBootWindow else {
+      // App nur neu gestartet, System lief schon länger -> keine (irreführende) Boot-Baseline.
+      logger.add(
+        "Startup-Baseline übersprungen (kein frischer Boot, uptime=\(Int(uptime))s)", type: .info)
+      return
+    }
     DispatchQueue.global(qos: .utility).async { [weak self] in
       guard let self = self else { return }
       self.logger.add(self.raStateSummary(interface: interface, tag: "RA@boot"), type: .info)
