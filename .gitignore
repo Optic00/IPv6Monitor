@@ -1,1 +1,6 @@
 *.xcuserdatad
+build/
+scratchpad-diagnostics-plan.md
+
+# Interne Design-Notizen lokal halten (docs/root-cause-analysis.md bleibt getrackt).
+docs/superpowers/
