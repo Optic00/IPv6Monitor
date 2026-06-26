@@ -270,8 +270,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         format: NSLocalizedString("macOS: %@", comment: ""),
         ProcessInfo.processInfo.operatingSystemVersionString), type: .info)
 
-    // Alte Forensik-Snapshots aufräumen (über Wochen reichlich, aber nicht unbegrenzt).
-    pruneSnapshots(keep: 100)
+    // Alte Forensik-Snapshots und Boot-Baselines aufräumen (über Wochen reichlich, aber nicht unbegrenzt).
+    pruneSnapshots(keep: 100, prefix: "snapshot-")
+    pruneSnapshots(keep: 100, prefix: "startup-")
 
     NSWorkspace.shared.notificationCenter.addObserver(
       self,
@@ -307,6 +308,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Baseline: wie viele IPv6-Router sehen wir aktuell im Netz?
     logCensusIfChanged(interface: interface, force: true)
+
+    // AP7: vollständige Boot-Baseline (RA@boot-Zeile + startup-Snapshot) im Hintergrund festhalten.
+    captureStartupBaseline(interface: interface)
 
     checkRoute(logSuccess: false)
 
@@ -461,7 +465,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           NSLocalizedString("❌ Route lost! Starting repair...", comment: ""), type: .error)
         // AP6: RA-Zustand im Verlustmoment festhalten (datiert im Logfile) — Datengrundlage,
         // um die „high-pref läuft ab"-Hypothese über viele Verluste zu prüfen.
-        logger.add(raLossSummary(interface: interface), type: .warning)
+        logger.add(raStateSummary(interface: interface, tag: "RA@loss"), type: .warning)
       }
 
       // AP2/AP4: genau EIN Forensik-Snapshot pro Ausfall-Episode, VOR der Reparatur,
@@ -724,27 +728,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     return formatter.string(from: Date())
   }
 
-  // AP6: Kompakte, greppbare RA-Zustandszeile für den Verlustmoment.
-  // Stabiler (nicht lokalisierter) Marker „RA@loss" + expire je Preference, damit man über viele
-  // Verluste hinweg per grep prüfen kann, ob der Verlust mit `high`-`expire≈0` korreliert.
-  func raLossSummary(interface: String) -> String {
+  // AP6: Kompakte, greppbare RA-Zustandszeile. Stabiler (nicht lokalisierter) `tag`-Marker
+  // (`RA@loss` beim Verlust, `RA@boot` beim Start) + expire je Preference, damit man über viele
+  // Ereignisse per grep den `high`-`expire` und die Zusammensetzung vergleichen kann.
+  func raStateSummary(interface: String, tag: String) -> String {
     let routers = RADiagnostics.routers(interface: interface)
     func expires(_ pref: String) -> String {
       routers.filter { $0.pref == pref }.map { $0.expire }.joined(separator: ",")
     }
     return
-      "RA@loss total=\(routers.count) high=[\(expires("high"))] medium=[\(expires("medium"))] low=[\(expires("low"))]"
+      "\(tag) total=\(routers.count) high=[\(expires("high"))] medium=[\(expires("medium"))] low=[\(expires("low"))]"
+  }
+
+  // AP7: Boot-Baseline. Beim Start einmal den vollständigen IPv6-Router-/Route-Zustand festhalten
+  // (datierte `RA@boot`-Zeile + `startup-…`-Snapshot), um „saubere" vs. „fragile" Boots zu vergleichen
+  // (sporadischer Verlust hängt vermutlich an der Boot-Konvergenz der Default-Router-Liste).
+  // Läuft im Hintergrund, da die Diagnose-Befehle ein paar Sekunden brauchen.
+  func captureStartupBaseline(interface: String) {
+    DispatchQueue.global(qos: .utility).async { [weak self] in
+      guard let self = self else { return }
+      self.logger.add(self.raStateSummary(interface: interface, tag: "RA@boot"), type: .info)
+      self.captureDiagnosticSnapshot(
+        reason: "App startup baseline", interface: interface, filePrefix: "startup")
+    }
   }
 
   // MARK: - AP2: Forensik-Snapshot
 
-  func captureDiagnosticSnapshot(reason: String, interface: String) {
+  // `filePrefix` trennt die Boot-Baseline (`startup-…`) von den Verlust-Snapshots (`snapshot-…`),
+  // damit beide unabhängig auffindbar/prunebar sind.
+  func captureDiagnosticSnapshot(reason: String, interface: String, filePrefix: String = "snapshot")
+  {
     guard let dir = logger.logDirectoryURL else { return }
 
+    let raTag = filePrefix == "startup" ? "RA@boot" : "RA@loss"
     let nameFormatter = DateFormatter()
     nameFormatter.locale = Locale(identifier: "en_US_POSIX")
     nameFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-    let fileURL = dir.appendingPathComponent("snapshot-\(nameFormatter.string(from: Date())).txt")
+    let fileURL = dir.appendingPathComponent(
+      "\(filePrefix)-\(nameFormatter.string(from: Date())).txt")
 
     var out = ""
     out += "==== IPv6Monitor Diagnostic Snapshot ====\n"
@@ -759,7 +781,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     if let lastPath = lastPathDescription { out += "Last NWPath:     \(lastPath)\n" }
     let census = ipv6RouterCensus(interface: interface)
     out += "IPv6 routers:    \(census.summary)\n"
-    out += "RA state:        \(raLossSummary(interface: interface))\n"
+    out += "RA state:        \(raStateSummary(interface: interface, tag: raTag))\n"
     out += "\n"
 
     if !census.routers.isEmpty {
@@ -917,7 +939,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   // Behält nur die jüngsten `keep` Snapshot-Dateien (nach Änderungsdatum).
-  func pruneSnapshots(keep: Int) {
+  func pruneSnapshots(keep: Int, prefix: String = "snapshot-") {
     guard let dir = logger.logDirectoryURL else { return }
     let fm = FileManager.default
     guard
@@ -926,7 +948,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     else { return }
 
     let snapshots = files.filter {
-      $0.lastPathComponent.hasPrefix("snapshot-") && $0.pathExtension == "txt"
+      $0.lastPathComponent.hasPrefix(prefix) && $0.pathExtension == "txt"
     }
     guard snapshots.count > keep else { return }
 
