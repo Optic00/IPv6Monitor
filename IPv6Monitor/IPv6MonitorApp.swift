@@ -991,6 +991,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     DispatchQueue.main.async {
       let menu = NSMenu()
 
+      // Versionszeile (ausgegraut), damit man die gerade laufende Build-Version sofort sieht.
+      let appVer = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+      let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+      menu.addItem(
+        NSMenuItem(title: "IPv6Monitor \(appVer) (\(build))", action: nil, keyEquivalent: ""))
+      menu.addItem(NSMenuItem.separator())
+
       let interfaceTitle =
         self.currentInterface != nil
         ? String(format: NSLocalizedString("Interface: %@", comment: ""), self.currentInterface!)
