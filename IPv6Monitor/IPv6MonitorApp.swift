@@ -826,6 +826,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Caveat: `ndp -an` zeigt nur den Neighbor-Cache, nicht zwingend ALLE RA-Sender im LAN.
     let commands: [(String, [String])] = [
       ("/sbin/route", ["-n", "get", "-inet6", "default"]),
+      // Scoped-Variante: zeigt, ob die `%interface`-scoped Default-Route noch auflöst,
+      // während die unscoped oben „not in table" liefert — direkter Beleg für die
+      // Konsistenz-Diskrepanz Kernel-Scoped-Route ↔ unscoped Lookup (Apple-Report).
+      ("/sbin/route", ["-n", "get", "-inet6", "default", "-ifscope", interface]),
       ("/sbin/route", ["-n", "get", "-inet6", "2001:4860:4860::8888"]),
       ("/usr/sbin/netstat", ["-rn", "-f", "inet6"]),
       ("/usr/sbin/ndp", ["-rn"]),
