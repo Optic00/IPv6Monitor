@@ -81,12 +81,19 @@ require_root() { [ "$(id -u)" -eq 0 ] || { echo '{"error":"must run as root"}'; 
 
 # Sniff RAs on <iface> for SNIFF_SECS, print raw tcpdump -vv text on stdout.
 sniff_ras() {
-  local iface="$1" tmp td
+  local iface="$1" tmp td n
   tmp=$(mktemp)
   tcpdump -ni "$iface" -vv -l 'icmp6 and ip6[40] == 134' >"$tmp" 2>/dev/null &
   td=$!
   sleep "$SNIFF_SECS"
-  kill "$td" 2>/dev/null; wait "$td" 2>/dev/null
+  # On a quiet interface tcpdump can be stuck in a blocking BPF read and
+  # ignore SIGTERM; escalate to SIGKILL after a short grace period so this
+  # never hangs (and so the caller's `wait` below always returns).
+  kill "$td" 2>/dev/null
+  n=0
+  while [ "$n" -lt 3 ] && kill -0 "$td" 2>/dev/null; do sleep 1; n=$((n + 1)); done
+  kill -9 "$td" 2>/dev/null
+  wait "$td" 2>/dev/null
   cat "$tmp"; rm -f "$tmp"
 }
 
