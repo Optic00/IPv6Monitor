@@ -48,3 +48,25 @@ sudo /Library/PrivilegedHelperTools/ipv6monitor-pf off           # anchor flushe
 ```
 
 Expected: `on` keeps IPv6 up (`ping6` works), the JSON parses, `off` cleanly reverts.
+
+### Integration evidence (2026-06-30, en10)
+
+`detect`/`status` were verified directly against the real LAN; `on`/`off` were **not**
+exercised against the live anchor because `com.apple/ipv6monitor` was already loaded and
+active from `experiments/pf-ra-whitelist/pf-ra-test.sh on`, running continuously since
+2026-06-28 — switching anchors mid-test would have interrupted real RA protection, so that
+swap is deferred to a planned maintenance window instead of being done opportunistically.
+
+- `status` against the live, 2+ day old anchor: `{"active":true,"iface":"en10","pass":10473,"block":9351,"default_route":true}`
+  — thousands of gateway RAs passed, thousands of rogue RAs blocked, IPv6 default route intact.
+  This is a stronger soak test than the originally planned short manual run.
+- `detect en10` (fixed wrapper, `SNIFF_SECS=5`): `{"gateways":["fe80::962a:6fff:fef2:ad"],"others":0}`
+  — correctly identified the real gateway; matches the `route -n get -inet6 default` gateway.
+- **Bug found and fixed during this check:** on a quiet interface (expected here, since the
+  active `block` rule already suppresses most RA traffic), `tcpdump` can sit in a blocking BPF
+  `read()` that ignores `SIGTERM`, hanging `sniff_ras`'s `kill "$td"; wait "$td"` indefinitely
+  (reproduced for 38+ minutes, confirmed via `sample` — bash stuck in `__wait4`, tcpdump stuck
+  in `pcap_read_bpf`). Fixed by escalating to `SIGKILL` after a 3s grace period.
+- **Remaining manual step:** a full `on`/`off` cycle through *this* wrapper (replacing the
+  original script's anchor ownership) is still outstanding — do it in a maintenance window,
+  not opportunistically while real protection is active.
