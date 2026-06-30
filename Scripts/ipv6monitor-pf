@@ -10,6 +10,13 @@ SNIFF_SECS="${SNIFF_SECS:-60}"
 
 usage() { echo "Usage: ipv6monitor-pf {detect <iface>|on <iface>|off|status}" >&2; }
 
+valid_iface() {
+  local i="${1:-}"
+  echo "$i" | grep -qE '^en[0-9]+$' || return 1
+  ifconfig "$i" >/dev/null 2>&1 || return 1
+  return 0
+}
+
 # (subcommand functions added in later tasks)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }
