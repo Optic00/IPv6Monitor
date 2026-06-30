@@ -63,6 +63,15 @@ path_is_safe() {
   return 0
 }
 
+# Reads `pfctl -a <anchor> -s labels` on stdin; prints "PASS <n> BLOCK <n>" (col 4 = total packets).
+parse_labels() {
+  awk '
+    /^ipv6mon:pass-ra-gw/     { pass=$3 }
+    /^ipv6mon:block-ra-other/ { block=$3 }
+    END { printf "PASS %d BLOCK %d\n", pass+0, block+0 }
+  '
+}
+
 # (subcommand functions added in later tasks)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }

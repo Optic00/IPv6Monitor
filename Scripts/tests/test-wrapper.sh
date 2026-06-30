@@ -54,4 +54,15 @@ path_is_safe "$sub"; check "user-owned path is unsafe" 1 "$?"
 path_is_safe "/usr/bin/true"; check "system path is safe" 0 "$?"
 rm -rf "$tmp"
 
+# --- Task 6: parse pf labels ---
+labels=$(cat <<'EOF'
+ipv6mon:pass-ra-gw 40 9313 1490080 0 0 0 0 0
+ipv6mon:block-ra-other 120 8678 520680 0 0 0 0 0
+EOF
+)
+out=$(printf '%s\n' "$labels" | parse_labels)
+check "labels parsed" "PASS 9313 BLOCK 8678" "$out"
+empty=$(printf '' | parse_labels)
+check "empty labels -> zeros" "PASS 0 BLOCK 0" "$empty"
+
 exit $fail
