@@ -1,0 +1,31 @@
+#!/bin/bash
+# ipv6monitor-pf — privileged helper for IPv6Monitor RA protection. See
+# docs/superpowers/specs/2026-06-30-pf-ra-protection-app-toggle-design.md
+set -u
+
+ANCHOR="com.apple/ipv6monitor"
+TABLE="ipv6mon_gw"
+STATE_DIR="/var/run/ipv6mon-pf"
+SNIFF_SECS="${SNIFF_SECS:-60}"
+
+usage() { echo "Usage: ipv6monitor-pf {detect <iface>|on <iface>|off|status}" >&2; }
+
+# (subcommand functions added in later tasks)
+cmd_detect() { echo '{}'; }
+cmd_on()     { echo '{}'; }
+cmd_off()    { :; }
+cmd_status() { echo '{}'; }
+
+_main() {
+  cmd="${1:-}"; [ $# -gt 0 ] && shift
+  case "$cmd" in
+    detect) cmd_detect "$@" ;;
+    on)     cmd_on "$@" ;;
+    off)    cmd_off "$@" ;;
+    status) cmd_status "$@" ;;
+    *) usage; exit 2 ;;
+  esac
+}
+
+# Run dispatch only when executed, not when sourced (for tests).
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then _main "$@"; fi
