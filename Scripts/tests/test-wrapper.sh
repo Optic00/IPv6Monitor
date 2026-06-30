@@ -24,24 +24,24 @@ if [ -n "$real_en" ]; then valid_iface "$real_en"; check "accepts real en" 0 "$?
 
 # --- Task 3: parse RA sources ---
 sample=$(cat <<'EOF'
-12:00:01 IP6 (class 0xc0) fe80::962a:6fff:fef2:ad > ff02::1: ICMP6, router advertisement, length 88
+12:00:01 IP6 (class 0xc0) fe80::1234:5678:9abc:def0 > ff02::1: ICMP6, router advertisement, length 88
 	hop limit 64, Flags [none], pref high, router lifetime 1800s, reachable time 0ms
-12:00:02 IP6 (flowlabel 0x1) fe80::452:d241:d24a:d549 > ff02::1: ICMP6, router advertisement, length 40
+12:00:02 IP6 (flowlabel 0x1) fe80::aaaa:1 > ff02::1: ICMP6, router advertisement, length 40
 	hop limit 0, Flags [ipv6 only], pref medium, router lifetime 0s, reachable time 0ms
-12:00:03 IP6 (class 0xc0) fe80::962a:6fff:fef2:ad > ff02::1: ICMP6, router advertisement, length 88
+12:00:03 IP6 (class 0xc0) fe80::1234:5678:9abc:def0 > ff02::1: ICMP6, router advertisement, length 88
 	hop limit 64, Flags [none], pref high, router lifetime 1800s, reachable time 0ms
-12:00:04 IP6 (flowlabel 0x2) fe80::18ec:c4fb:de39:bedb > ff02::1: ICMP6, router advertisement, length 40
+12:00:04 IP6 (flowlabel 0x2) fe80::bbbb:2 > ff02::1: ICMP6, router advertisement, length 40
 	hop limit 0, Flags [ipv6 only], pref medium, router lifetime 0s, reachable time 0ms
 EOF
 )
 gwline=$(printf '%s\n' "$sample" | parse_ra_sources | sed -n '1p')
 otherline=$(printf '%s\n' "$sample" | parse_ra_sources | sed -n '2p')
-check "gateway is the lifetime>0 source" "GW fe80::962a:6fff:fef2:ad" "$gwline"
+check "gateway is the lifetime>0 source" "GW fe80::1234:5678:9abc:def0" "$gwline"
 check "two distinct lifetime-0 senders" "OTHER 2" "$otherline"
 
 # --- Task 4: rule generation ---
-rules=$(build_rules en10 fe80::962a:6fff:fef2:ad)
-echo "$rules" | grep -qF 'table <ipv6mon_gw> const { fe80::962a:6fff:fef2:ad }' && r1=ok || r1=no
+rules=$(build_rules en10 fe80::1234:5678:9abc:def0)
+echo "$rules" | grep -qF 'table <ipv6mon_gw> const { fe80::1234:5678:9abc:def0 }' && r1=ok || r1=no
 echo "$rules" | grep -qF 'pass  in log quick on en10 inet6 proto icmp6 from <ipv6mon_gw> to any icmp6-type 134 code 0 no state label "ipv6mon:pass-ra-gw"' && r2=ok || r2=no
 echo "$rules" | grep -qF 'block in log quick on en10 inet6 proto icmp6 from fe80::/10 to any icmp6-type 134 code 0 label "ipv6mon:block-ra-other"' && r3=ok || r3=no
 check "table line" ok "$r1"; check "pass line" ok "$r2"; check "block line" ok "$r3"
