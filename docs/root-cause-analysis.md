@@ -111,11 +111,34 @@ independently; the formerly factory-new test machine has since had similar softw
 installed too. The historical vanilla-hardware reproduction still stands, but newer captures
 are no longer interference-free — a clean passive run is the remaining gap.
 
+## Update 2026-06-30 — host-side prevention works (pf A/B experiment)
+
+A 48-hour A/B test on the affected host: a `pf` rule admitting inbound RAs only from the
+gateway (blocking all other link-local RA senders on the primary interface, loaded into the
+stock `com.apple/*` anchor; see `experiments/pf-ra-whitelist/`).
+
+Result over 48 h:
+
+- **0 route losses** (baseline ~10 expected over the same window).
+- **8 678 rogue RAs blocked** vs **9 313 gateway RAs allowed** — the rogue senders kept
+  advertising the whole time; they were simply dropped before the kernel saw them.
+- `ndp -rn` collapsed from **8 routers to 1** (the gateway only) within ~2 h and stayed there:
+  the Router-Lifetime-0 senders aged out of the Default Router List once their RAs were blocked
+  and were never re-admitted.
+
+**Interpretation.** Host-side prevention works, and it strongly implicates the presence of
+multiple / Router-Lifetime-0 RA senders as the **trigger** — taking them off the wire (and thus
+out of the kernel's Default Router List) eliminates the loss. Caveats: single host / single LAN,
+and the filter changes several variables at once (rogue RAs gone, Default Router List collapses,
+route stays up), so this is strong evidence rather than a fully isolated proof. The before/after
+on the same host is nonetheless compelling. **Open follow-up:** a synthetic RA-injection minimal
+case would isolate the variable for Apple.
+
 ## Conclusion
 
 - **Real fix:** not possible without Apple (kernel is closed source).
 - **What the evidence now supports:** a macOS kernel consistency bug between the IPv6 Default Router List / SystemConfiguration and the scoped route table, reproducible on factory-new hardware across all interface types and without any VPN — triggered by a LAN with multiple IPv6 RA senders.
-- **Best self-buildable progress:** prevent the trigger (network RA Guard on the gateway, or a host `pf` filter that admits RAs only from the gateway link-local) and keep collecting evidence. An event-driven `PF_ROUTE` redesign is *not* viable — the loss emits no `RTM_DELETE` (see 2026-06-27 update).
+- **Best self-buildable progress:** prevent the trigger. A host `pf` filter that admits RAs only from the gateway link-local **has now been shown to eliminate the loss for 48 h** (see the 2026-06-30 update) — viable wherever network-side RA Guard is unavailable. An event-driven `PF_ROUTE` redesign is *not* viable: the loss emits no `RTM_DELETE` (see 2026-06-27 update), so detection still requires polling.
 
 ---
-*Living analysis note. Updated 2026-06-27 with: packet + routing-socket correlation across five dated losses (no `RTM_DELETE` on loss; scoped/unscoped split with mitigation-route caveat; single RIO-only sender type), correcting the earlier "two sender types" framing and the event-driven lever. Earlier (2026-06-26): factory-new-hardware reproduction and automatic `RA@loss` capture.*
+*Living analysis note. Updated 2026-06-30 with: a 48 h host-side `pf` prevention experiment (0 losses vs ~10 baseline, 8 678 rogue RAs blocked, `ndp -rn` 8→1) showing the trigger can be removed host-side. Earlier (2026-06-27): packet + routing-socket correlation across five dated losses (no `RTM_DELETE`; scoped/unscoped split; single RIO-only sender type). Earlier (2026-06-26): factory-new-hardware reproduction and automatic `RA@loss` capture.*
