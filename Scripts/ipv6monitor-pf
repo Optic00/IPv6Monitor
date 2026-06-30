@@ -77,10 +77,87 @@ json_status() { # active iface pass block default_route
     "$1" "$2" "$3" "$4" "$5"
 }
 
-# (cmd_detect / cmd_on filled in Task 8)
-cmd_detect() { echo '{}'; }
-cmd_on()     { echo '{}'; }
-cmd_off()    { :; }
+require_root() { [ "$(id -u)" -eq 0 ] || { echo '{"error":"must run as root"}'; exit 1; }; }
+
+# Sniff RAs on <iface> for SNIFF_SECS, print raw tcpdump -vv text on stdout.
+sniff_ras() {
+  local iface="$1" tmp td
+  tmp=$(mktemp)
+  tcpdump -ni "$iface" -vv -l 'icmp6 and ip6[40] == 134' >"$tmp" 2>/dev/null &
+  td=$!
+  sleep "$SNIFF_SECS"
+  kill "$td" 2>/dev/null; wait "$td" 2>/dev/null
+  cat "$tmp"; rm -f "$tmp"
+}
+
+# JSON array from a space-separated address list.
+json_array() {
+  local out="" a
+  for a in $1; do out="$out\"$a\","; done
+  printf '[%s]' "${out%,}"
+}
+
+rollback() {
+  pfctl -a "$ANCHOR" -F rules  >/dev/null 2>&1
+  pfctl -a "$ANCHOR" -F Tables >/dev/null 2>&1
+  if [ -f "$STATE_DIR/token" ]; then
+    pfctl -X "$(cat "$STATE_DIR/token")" >/dev/null 2>&1
+    rm -f "$STATE_DIR/token"
+  fi
+}
+
+# Ensure the stock com.apple/* wildcard anchor is active so our sub-anchor is evaluated.
+ensure_anchor_available() {
+  if pfctl -s info 2>/dev/null | grep -q "Status: Enabled"; then
+    pfctl -sr 2>/dev/null | grep -q 'anchor "com.apple/\*"' && return 0
+    echo '{"error":"pf enabled with a custom ruleset (no com.apple/* anchor); refusing"}'
+    return 1
+  fi
+  pfctl -f /etc/pf.conf >/dev/null 2>&1
+  local tok; tok=$(pfctl -E 2>&1 | awk '/Token/{print $NF}')
+  [ -n "$tok" ] && echo "$tok" > "$STATE_DIR/token"
+  pfctl -sr 2>/dev/null | grep -q 'anchor "com.apple/\*"' || {
+    echo '{"error":"com.apple/* anchor absent after loading stock pf.conf"}'; rollback; return 1; }
+  return 0
+}
+
+cmd_detect() {
+  local iface="${1:-}"
+  valid_iface "$iface" || { echo '{"error":"invalid interface"}'; exit 2; }
+  local parsed gws others
+  parsed=$(sniff_ras "$iface" | parse_ra_sources)
+  gws=$(echo "$parsed" | sed -n '1p' | sed 's/^GW //; s/^GW$//')
+  others=$(echo "$parsed" | sed -n '2p' | awk '{print $2}')
+  printf '{"gateways":%s,"others":%d}\n' "$(json_array "$gws")" "${others:-0}"
+}
+
+cmd_on() {
+  require_root
+  local iface="${1:-}"
+  valid_iface "$iface" || { echo '{"error":"invalid interface"}'; exit 2; }
+  mkdir -p "$STATE_DIR"
+  local parsed gws
+  parsed=$(sniff_ras "$iface" | parse_ra_sources)
+  gws=$(echo "$parsed" | sed -n '1p' | sed 's/^GW //; s/^GW$//')
+  [ -n "$gws" ] || { echo '{"error":"no gateway (positive-lifetime RA) seen"}'; exit 1; }
+  local rules; rules=$(build_rules "$iface" $gws)
+  ensure_anchor_available || exit 1
+  trap 'rollback; echo "{\"error\":\"aborted\"}"; exit 1' ERR INT
+  echo "$rules" | pfctl -n -a "$ANCHOR" -f - 2>/dev/null || {
+    rollback; echo '{"error":"rule parse failed"}'; exit 1; }
+  echo "$rules" | pfctl -a "$ANCHOR" -f - 2>/dev/null
+  trap - ERR INT
+  echo "$iface" > "$STATE_DIR/iface"
+  date +%s > "$STATE_DIR/start"
+  cmd_status
+}
+
+cmd_off() {
+  require_root
+  rollback
+  rm -f "$STATE_DIR/iface" "$STATE_DIR/start"
+  echo '{"active":false}'
+}
 
 cmd_status() {
   local active=false iface="" pass=0 block=0 route=false labels
