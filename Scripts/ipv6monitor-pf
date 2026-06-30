@@ -36,6 +36,15 @@ parse_ra_sources() {
   '
 }
 
+# build_rules <iface> <gw1> [gw2 …] — prints the three-line pf ruleset.
+build_rules() {
+  local iface="$1"; shift
+  local list; list=$(printf '%s, ' "$@"); list="${list%, }"
+  echo "table <$TABLE> const { $list }"
+  echo "pass  in log quick on $iface inet6 proto icmp6 from <$TABLE> to any icmp6-type 134 code 0 no state label \"ipv6mon:pass-ra-gw\""
+  echo "block in log quick on $iface inet6 proto icmp6 from fe80::/10 to any icmp6-type 134 code 0 label \"ipv6mon:block-ra-other\""
+}
+
 # (subcommand functions added in later tasks)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }

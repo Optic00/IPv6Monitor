@@ -39,4 +39,13 @@ otherline=$(printf '%s\n' "$sample" | parse_ra_sources | sed -n '2p')
 check "gateway is the lifetime>0 source" "GW fe80::962a:6fff:fef2:ad" "$gwline"
 check "two distinct lifetime-0 senders" "OTHER 2" "$otherline"
 
+# --- Task 4: rule generation ---
+rules=$(build_rules en10 fe80::962a:6fff:fef2:ad)
+echo "$rules" | grep -qF 'table <ipv6mon_gw> const { fe80::962a:6fff:fef2:ad }' && r1=ok || r1=no
+echo "$rules" | grep -qF 'pass  in log quick on en10 inet6 proto icmp6 from <ipv6mon_gw> to any icmp6-type 134 code 0 no state label "ipv6mon:pass-ra-gw"' && r2=ok || r2=no
+echo "$rules" | grep -qF 'block in log quick on en10 inet6 proto icmp6 from fe80::/10 to any icmp6-type 134 code 0 label "ipv6mon:block-ra-other"' && r3=ok || r3=no
+check "table line" ok "$r1"; check "pass line" ok "$r2"; check "block line" ok "$r3"
+echo "$(build_rules en10 fe80::a fe80::b)" | grep -qF '{ fe80::a, fe80::b }' && r4=ok || r4=no
+check "multi-gateway table" ok "$r4"
+
 exit $fail
