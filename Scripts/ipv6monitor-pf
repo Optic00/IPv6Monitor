@@ -17,6 +17,25 @@ valid_iface() {
   return 0
 }
 
+# Reads `tcpdump -vv` RA text on stdin; prints "GW <sources lifetime>0>" then "OTHER <count lifetime 0>".
+parse_ra_sources() {
+  awk '
+    /router advertisement/ { cur=""; for (i=1;i<=NF;i++) if ($i==">") cur=$(i-1) }
+    match($0, /router lifetime [0-9]+s/) {
+      s=substr($0,RSTART,RLENGTH); gsub(/[^0-9]/,"",s)
+      if (cur=="") next
+      if (s+0>0) gw[cur]=1; else other[cur]=1
+    }
+    END {
+      printf "GW"
+      for (k in gw) printf " %s", k
+      printf "\n"
+      n=0; for (k in other) if (!(k in gw)) n++
+      printf "OTHER %d\n", n
+    }
+  '
+}
+
 # (subcommand functions added in later tasks)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }
