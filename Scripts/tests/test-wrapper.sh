@@ -48,4 +48,10 @@ check "table line" ok "$r1"; check "pass line" ok "$r2"; check "block line" ok "
 echo "$(build_rules en10 fe80::a fe80::b)" | grep -qF '{ fe80::a, fe80::b }' && r4=ok || r4=no
 check "multi-gateway table" ok "$r4"
 
+# --- Task 5: path-integrity ---
+tmp=$(mktemp -d); sub="$tmp/x"; : > "$sub"
+path_is_safe "$sub"; check "user-owned path is unsafe" 1 "$?"
+path_is_safe "/usr/bin/true"; check "system path is safe" 0 "$?"
+rm -rf "$tmp"
+
 exit $fail

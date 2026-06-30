@@ -45,6 +45,24 @@ build_rules() {
   echo "block in log quick on $iface inet6 proto icmp6 from fe80::/10 to any icmp6-type 134 code 0 label \"ipv6mon:block-ra-other\""
 }
 
+# path_is_safe <path> — 0 only if the path and every parent are uid-0-owned and not
+# group/other writable. Guards the sudoers target against local root escalation.
+path_is_safe() {
+  local p; p=$(cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")") || return 1
+  while : ; do
+    local uid perm
+    uid=$(stat -f '%u' "$p" 2>/dev/null) || return 1
+    perm=$(stat -f '%Lp' "$p" 2>/dev/null) || return 1
+    [ "$uid" = "0" ] || return 1
+    case "$perm" in *[2367]) return 1 ;; esac          # other-writable (last octal digit)
+    local g="${perm%?}"; g="${g#"${g%?}"}"             # group (second-from-last) digit
+    case "$g" in 2|3|6|7) return 1 ;; esac             # group-writable
+    [ "$p" = "/" ] && break
+    p=$(dirname "$p")
+  done
+  return 0
+}
+
 # (subcommand functions added in later tasks)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }
