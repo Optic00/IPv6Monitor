@@ -72,11 +72,25 @@ parse_labels() {
   '
 }
 
-# (subcommand functions added in later tasks)
+json_status() { # active iface pass block default_route
+  printf '{"active":%s,"iface":"%s","pass":%d,"block":%d,"default_route":%s}\n' \
+    "$1" "$2" "$3" "$4" "$5"
+}
+
+# (cmd_detect / cmd_on filled in Task 8)
 cmd_detect() { echo '{}'; }
 cmd_on()     { echo '{}'; }
 cmd_off()    { :; }
-cmd_status() { echo '{}'; }
+
+cmd_status() {
+  local active=false iface="" pass=0 block=0 route=false labels
+  if pfctl -a "$ANCHOR" -sr 2>/dev/null | grep -q 'ipv6mon:'; then active=true; fi
+  labels=$(pfctl -a "$ANCHOR" -s labels 2>/dev/null | parse_labels)
+  pass=$(echo "$labels" | awk '{print $2}'); block=$(echo "$labels" | awk '{print $4}')
+  [ -f "$STATE_DIR/iface" ] && iface=$(cat "$STATE_DIR/iface")
+  route -n get -inet6 default >/dev/null 2>&1 && route=true
+  json_status "$active" "$iface" "${pass:-0}" "${block:-0}" "$route"
+}
 
 _main() {
   cmd="${1:-}"; [ $# -gt 0 ] && shift

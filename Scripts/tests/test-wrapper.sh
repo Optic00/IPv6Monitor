@@ -65,4 +65,10 @@ check "labels parsed" "PASS 9313 BLOCK 8678" "$out"
 empty=$(printf '' | parse_labels)
 check "empty labels -> zeros" "PASS 0 BLOCK 0" "$empty"
 
+# --- Task 7: json_status ---
+js=$(json_status true en10 9313 8678 true)
+check "json shape" '{"active":true,"iface":"en10","pass":9313,"block":8678,"default_route":true}' "$js"
+js2=$(json_status false "" 0 0 false)
+check "json inactive" '{"active":false,"iface":"","pass":0,"block":0,"default_route":false}' "$js2"
+
 exit $fail
