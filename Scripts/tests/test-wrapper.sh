@@ -39,6 +39,15 @@ otherline=$(printf '%s\n' "$sample" | parse_ra_sources | sed -n '2p')
 check "gateway is the lifetime>0 source" "GW fe80::1234:5678:9abc:def0" "$gwline"
 check "two distinct lifetime-0 senders" "OTHER 2" "$otherline"
 
+# non-link-local source must never become the trusted gateway, even with lifetime>0
+spoofed=$(cat <<'EOF'
+12:00:05 IP6 (class 0xc0) 2001:db8::1 > ff02::1: ICMP6, router advertisement, length 88
+	hop limit 64, Flags [none], pref high, router lifetime 1800s, reachable time 0ms
+EOF
+)
+spoofgw=$(printf '%s\n' "$spoofed" | parse_ra_sources | sed -n '1p')
+check "non-link-local source rejected as gateway" "GW" "$spoofgw"
+
 # --- Task 4: rule generation ---
 rules=$(build_rules en10 fe80::1234:5678:9abc:def0)
 echo "$rules" | grep -qF 'table <ipv6mon_gw> const { fe80::1234:5678:9abc:def0 }' && r1=ok || r1=no

@@ -24,7 +24,7 @@ parse_ra_sources() {
     match($0, /router lifetime [0-9]+s/) {
       s=substr($0,RSTART,RLENGTH); gsub(/[^0-9]/,"",s)
       if (cur=="") next
-      if (s+0>0) gw[cur]=1; else other[cur]=1
+      if (s+0>0 && cur ~ /^fe80:/) gw[cur]=1; else other[cur]=1
     }
     END {
       printf "GW"
@@ -63,7 +63,7 @@ path_is_safe() {
   return 0
 }
 
-# Reads `pfctl -a <anchor> -s labels` on stdin; prints "PASS <n> BLOCK <n>" (col 4 = total packets).
+# Reads `pfctl -a <anchor> -s labels` on stdin; prints "PASS <n> BLOCK <n>" (col 3 = total packets).
 parse_labels() {
   awk '
     /^ipv6mon:pass-ra-gw/     { pass=$3 }
