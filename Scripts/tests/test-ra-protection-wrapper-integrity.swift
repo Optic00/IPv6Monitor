@@ -16,15 +16,14 @@ func check<T: Equatable>(_ desc: String, _ expected: T, _ actual: T) {
     check("root-owned system path is safe", true, RAProtectionWrapper.pathIsSafe("/usr/bin/true"))
     check("nonexistent path is unsafe", false, RAProtectionWrapper.pathIsSafe("/no/such/path/here"))
 
-    // Test relative path resolution: create a subdirectory, change cwd to parent, test relative path
-    let testSubdir = tmp + "/testsubdir"
-    try? FileManager.default.createDirectory(atPath: testSubdir, withIntermediateDirectories: true)
+    // Test resolveToAbsolute directly with string comparisons (no filesystem ownership gate)
     let originalCwd = FileManager.default.currentDirectoryPath
-    FileManager.default.changeCurrentDirectoryPath(tmp)
-    let relativeResult = RAProtectionWrapper.pathIsSafe("testsubdir")
-    let absoluteResult = RAProtectionWrapper.pathIsSafe(testSubdir)
+    FileManager.default.changeCurrentDirectoryPath("/usr/bin")
+    check("resolves a bare relative filename against cwd", "/usr/bin/true", RAProtectionWrapper.resolveToAbsolute("true"))
+    check("resolves a ./ relative path against cwd", "/usr/bin/true", RAProtectionWrapper.resolveToAbsolute("./true"))
+    check("resolves a ../ relative path against cwd", "/usr/true", RAProtectionWrapper.resolveToAbsolute("../true"))
+    check("passes through an absolute path unchanged", "/usr/bin/true", RAProtectionWrapper.resolveToAbsolute("/usr/bin/true"))
     FileManager.default.changeCurrentDirectoryPath(originalCwd)
-    check("relative path resolves same as absolute path", absoluteResult, relativeResult)
 
     try? FileManager.default.removeItem(atPath: tmp)
     exit(Int32(failures))

@@ -40,15 +40,20 @@ enum RAProtectionWrapper {
 }
 
 extension RAProtectionWrapper {
+  // Resolves `path` to an absolute path anchored at the current working directory (mirrors
+  // bash's `cd "$(dirname "$1")" && pwd`), without touching the filesystem. Already-absolute
+  // paths pass through unchanged. Exposed separately from `pathIsSafe` because the boolean
+  // safety check can't distinguish "walked the real parent directories" from "skipped them" —
+  // every real filesystem path a non-root test process can use happens to be safe either way.
+  static func resolveToAbsolute(_ path: String) -> String {
+    let basePath = path.hasPrefix("/") ? path : (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(path)
+    return (basePath as NSString).standardizingPath
+  }
+
   // owner must be uid 0 and neither group- nor other-writable, for the path and every parent.
   static func pathIsSafe(_ path: String) -> Bool {
     let fm = FileManager.default
-    // Resolve relative paths to absolute (anchored at cwd), matching bash's `cd ... && pwd` behavior
-    var absolutePath = path
-    if !path.hasPrefix("/") {
-      absolutePath = fm.currentDirectoryPath + "/" + path
-    }
-    var current = (absolutePath as NSString).standardizingPath
+    var current = resolveToAbsolute(path)
     while true {
       guard let attrs = try? fm.attributesOfItem(atPath: current) else { return false }
       guard let owner = attrs[.ownerAccountID] as? NSNumber, owner.intValue == 0 else { return false }
