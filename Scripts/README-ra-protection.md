@@ -19,6 +19,14 @@ Subcommands (JSON on stdout):
 - `off` — flush only our anchor, release our pf token
 - `status` — `{"active":…,"iface":…,"pass":…,"block":…,"default_route":…}` (read from `pfctl`)
 
+**Not instant.** `on` only blocks *new* incoming RAs from other senders — it does not purge the
+kernel's existing IPv6 neighbor-discovery cache. Routers the kernel already learned about before
+arming stay in `ndp -rn`'s default-router list until their own advertised lifetime expires (up to
+~2h in the original 48h experiment). This means a route loss shortly after arming does **not**
+by itself indicate the filter is broken — check whether stale entries are still present (via
+`ndp -rn` or the app's "IPv6 routers on the network" panel) before concluding the protection
+isn't working.
+
 ## Install
 
 ```sh

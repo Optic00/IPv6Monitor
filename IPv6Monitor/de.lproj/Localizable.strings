@@ -60,6 +60,7 @@
 "Cancel" = "Abbrechen";
 "Arm" = "Aktivieren";
 "Active on %@ — passed: %d, blocked: %d" = "Aktiv auf %@ — durchgelassen: %d, geblockt: %d";
+"Routers already known before arming stay listed above until their own lifetime expires (up to ~2h) — the filter only blocks new announcements, it doesn't clear the existing cache." = "Vor der Aktivierung bereits bekannte Router bleiben oben gelistet, bis ihre eigene Lebenszeit abläuft (bis zu ~2h) — der Filter blockiert nur neue Ankündigungen, er löscht nicht den bestehenden Cache.";
 "Turn off" = "Ausschalten";
 "OK" = "OK";
 "No gateway RA seen — nothing to whitelist." = "Kein Gateway-RA gesehen — nichts zum Whitelisten.";

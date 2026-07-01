@@ -48,6 +48,12 @@ struct RAProtectionPanel: View {
           String(
             format: NSLocalizedString("Active on %@ — passed: %d, blocked: %d", comment: ""),
             status.iface, status.pass, status.block))
+        Text(
+          NSLocalizedString(
+            "Routers already known before arming stay listed above until their own lifetime expires (up to ~2h) — the filter only blocks new announcements, it doesn't clear the existing cache.",
+            comment: "")
+        )
+        .font(.caption).foregroundColor(.secondary)
         Button(NSLocalizedString("Turn off", comment: ""), role: .destructive) { controller.disarm() }
         Toggle(NSLocalizedString("Re-arm automatically on launch", comment: ""), isOn: $controller.autoArmOnLaunch)
           .font(.caption)
