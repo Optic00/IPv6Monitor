@@ -265,7 +265,14 @@ extension RAProtectionController {
       let decision = RAProtectionGating.evaluateArming(precheck)
       switch decision {
       case .allowed:
-        DispatchQueue.main.async { self.confirmArm(iface: iface, acknowledgedMultiGateway: false) }
+        // `confirmArm` reads its gateway/detect data back out of `uiState` (it doesn't take
+        // `detect` as a parameter), so `uiState` must already be `.armingConfirm` before it's
+        // called — both statements run on the same main-queue dispatch, so the write is visible
+        // to `confirmArm`'s guard by the time it executes.
+        DispatchQueue.main.async {
+          self.uiState = .armingConfirm(detect, needsMultiGatewayConfirmation: false)
+          self.confirmArm(iface: iface, acknowledgedMultiGateway: false)
+        }
       case .allowedNeedsMultiGatewayConfirmation:
         // Multiple gateways always need an explicit human confirmation (per the design spec's
         // edge case) — auto-re-arm-on-launch must not skip that, so surface the sheet instead.
