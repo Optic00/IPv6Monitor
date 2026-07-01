@@ -48,7 +48,8 @@
 "Error" = "Fehler";
 "%1$d of %2$d Entries" = "%1$d von %2$d Einträgen";
 "Recommended" = "Empfohlen";
-"IPv6 routers on the network: %d" = "IPv6-Router im Netz: %d";"RA Protection (advanced)" = "RA-Schutz (erweitert)";
+"IPv6 routers on the network: %d" = "IPv6-Router im Netz: %d";
+"RA Protection (advanced)" = "RA-Schutz (erweitert)";
 "Prepare..." = "Vorbereiten...";
 "Checking network..." = "Netzwerk wird geprüft...";
 "Blocks incoming IPv6 Router Advertisements on this interface except from the gateway. May affect Thread/Matter/ULA routes this Mac learns. Applies to this interface only. Reboot or Off removes it." = "Blockiert eingehende IPv6 Router Advertisements auf diesem Interface außer vom Gateway. Kann Thread/Matter/ULA-Routen beeinflussen, die dieser Mac lernt. Gilt nur für dieses Interface. Neustart oder Aus entfernt die Regel.";
