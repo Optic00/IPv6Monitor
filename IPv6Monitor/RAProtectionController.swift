@@ -13,7 +13,18 @@ final class RAProtectionController: ObservableObject {
   }
 
   @Published private(set) var isVisible: Bool = false
-  @Published private(set) var uiState: UIState = .off
+  // Tracked here (not as View @State) so re-showing the Connectivity window mid-detect — which
+  // recreates the whole SwiftUI view hierarchy — doesn't reset the displayed elapsed time even
+  // though the underlying sniff never actually restarted.
+  @Published private(set) var preparingStartedAt: Date?
+  @Published private(set) var uiState: UIState = .off {
+    didSet {
+      switch uiState {
+      case .preparing: preparingStartedAt = Date()
+      default: preparingStartedAt = nil
+      }
+    }
+  }
 
   private let logger: Logger
   let workQueue = DispatchQueue(label: "org.ipv6monitor.raprotection")

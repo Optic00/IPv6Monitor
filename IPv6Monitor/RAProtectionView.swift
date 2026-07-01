@@ -36,7 +36,7 @@ struct RAProtectionPanel: View {
         controller.beginArmingFlow(iface: interface)
       }
     case .preparing:
-      RAProtectionPreparingView()
+      RAProtectionPreparingView(start: controller.preparingStartedAt ?? Date())
     case .armingConfirm(let detect, let needsConfirm):
       RAProtectionConfirmSheet(
         detect: detect, needsMultiGatewayConfirmation: needsConfirm, interface: interface,
@@ -68,16 +68,17 @@ struct RAProtectionPanel: View {
   }
 }
 
-// Live progress bar for the ~60s wrapper sniff window. `@State private var start` is only
-// (re-)initialized when this view's identity is (re-)created — i.e. fresh each time `.preparing`
-// is entered — not on every body re-evaluation, so the elapsed time is accurate across renders.
+// Live progress bar for the ~60s wrapper sniff window. `start` comes from the controller
+// (`preparingStartedAt`), not View @State — the Connectivity window can be closed and reopened
+// (a new NSHostingView, a fresh SwiftUI view hierarchy) while the underlying sniff keeps running
+// in the background, and the elapsed time must keep reflecting the real start, not reset to 0.
 private struct RAProtectionPreparingView: View {
-  @State private var start = Date()
+  let start: Date
   private let duration: TimeInterval = 60
 
   var body: some View {
     TimelineView(.periodic(from: start, by: 1)) { context in
-      let elapsed = min(context.date.timeIntervalSince(start), duration)
+      let elapsed = min(max(context.date.timeIntervalSince(start), 0), duration)
       VStack(alignment: .leading, spacing: 4) {
         ProgressView(value: elapsed, total: duration)
         Text(
