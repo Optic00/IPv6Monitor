@@ -23,6 +23,12 @@ func check<T: Equatable>(_ desc: String, _ expected: T, _ actual: T) {
       "needs confirmation for multiple gateways",
       RAProtectionGating.ArmingDecision.allowedNeedsMultiGatewayConfirmation,
       RAProtectionGating.evaluateArming(.init(gatewayFreshnessSeconds: 60, otherSendersCount: 3, gatewayCount: 2)))
+    check(
+      "precedence: fresh check takes priority over other-senders check", RAProtectionGating.ArmingDecision.refusedNoFreshGateway,
+      RAProtectionGating.evaluateArming(.init(gatewayFreshnessSeconds: nil, otherSendersCount: 0, gatewayCount: 0)))
+    check(
+      "boundary: exactly 70s freshness is treated as fresh", RAProtectionGating.ArmingDecision.allowed,
+      RAProtectionGating.evaluateArming(.init(gatewayFreshnessSeconds: 70, otherSendersCount: 3, gatewayCount: 1)))
     exit(Int32(failures))
   }
 }
