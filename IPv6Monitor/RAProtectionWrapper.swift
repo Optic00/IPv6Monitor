@@ -68,3 +68,47 @@ extension RAProtectionWrapper {
     return true
   }
 }
+
+extension RAProtectionWrapper {
+  struct RunResult {
+    let exitCode: Int32
+    let stdout: String
+    let stderr: String
+  }
+
+  // Every call re-checks path integrity (per the design spec: "the app must re-check before
+  // every call") — a NOPASSWD sudoers rule pointing at a since-replaced binary is a local
+  // root-escalation hole, so we refuse rather than trust a one-time install-time check.
+  static func run(subcommand: String, arguments: [String] = []) -> RunResult {
+    guard pathIsSafe(wrapperPath) else {
+      return RunResult(exitCode: -2, stdout: "", stderr: "wrapper integrity check failed")
+    }
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+    task.arguments = ["-n", wrapperPath, subcommand] + arguments
+    let outPipe = Pipe()
+    let errPipe = Pipe()
+    task.standardOutput = outPipe
+    task.standardError = errPipe
+    do {
+      try task.run()
+    } catch {
+      return RunResult(exitCode: -1, stdout: "", stderr: "launch error: \(error)")
+    }
+    // Read stderr concurrently so a full pipe buffer on either stream can't deadlock us
+    // (same pattern as AppDelegate.runCommand elsewhere in this app).
+    var errData = Data()
+    let errSem = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+      errSem.signal()
+    }
+    let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+    errSem.wait()
+    task.waitUntilExit()
+    return RunResult(
+      exitCode: task.terminationStatus,
+      stdout: String(data: outData, encoding: .utf8) ?? "",
+      stderr: String(data: errData, encoding: .utf8) ?? "")
+  }
+}
