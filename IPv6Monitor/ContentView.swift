@@ -2,8 +2,6 @@
 //  ContentView.swift
 //  IPv6Monitor
 //
-//  Created by Benjamin Busche on 21.01.26.
-//
 
 import SwiftUI
 
