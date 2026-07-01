@@ -177,3 +177,109 @@ extension RAProtectionController {
     return task.terminationStatus == 0
   }
 }
+
+extension RAProtectionController {
+  func disarm() {
+    workQueue.async { [weak self] in
+      guard let self else { return }
+      let result = RAProtectionWrapper.run(subcommand: "off")
+      self.armedIface = nil
+      DispatchQueue.main.async {
+        if result.exitCode == 0 {
+          self.logger.add(NSLocalizedString("RA protection turned off.", comment: ""), type: .info)
+        }
+        self.uiState = .off
+      }
+    }
+  }
+
+  // Called from the app's existing poll loop (AppDelegate.performRouteCheck) whenever we're
+  // armed; a no-op otherwise so this never fires wrapper calls while off. `armedIface` is only
+  // ever read/written on `workQueue` (here, in confirmArm, and in disarm) — the guard used to
+  // read it on the caller's queue instead, which was a cross-queue data race.
+  func pollHealth(currentInterface: String) {
+    workQueue.async { [weak self] in
+      guard let self, let armed = self.armedIface else { return }
+      let result = RAProtectionWrapper.run(subcommand: "status")
+      guard result.exitCode == 0, let status = RAProtectionWrapper.parseStatus(result.stdout) else { return }
+      if status.pass > self.lastKnownPass {
+        self.lastKnownPass = status.pass
+        self.lastPassIncreaseAt = Date()
+      }
+      let verdict = RAProtectionHealth.evaluate(
+        active: status.active,
+        ifaceMatches: status.iface == currentInterface && currentInterface == armed,
+        now: Date(),
+        lastPassIncreaseAt: self.lastPassIncreaseAt)
+      guard verdict != .ok else {
+        DispatchQueue.main.async { self.uiState = .active(status) }
+        return
+      }
+      _ = RAProtectionWrapper.run(subcommand: "off")
+      self.armedIface = nil
+      let detectResult = RAProtectionWrapper.run(subcommand: "detect", arguments: [currentInterface])
+      let redetect = RAProtectionWrapper.parseDetect(detectResult.stdout)
+      let reason: String
+      switch verdict {
+      case .autoOffAnchorGone:
+        reason = NSLocalizedString("The firewall rule was removed externally.", comment: "")
+      case .autoOffInterfaceChanged:
+        reason = NSLocalizedString("The network interface changed.", comment: "")
+      case .autoOffPassStalled:
+        reason = NSLocalizedString("Gateway RAs stopped arriving — the gateway may have changed.", comment: "")
+      case .ok:
+        reason = ""
+      }
+      DispatchQueue.main.async {
+        self.logger.add("⚠️ RA protection auto-off: \(reason)", type: .error)
+        self.uiState = .autoOffNotice(reason: reason, redetect: redetect)
+      }
+    }
+  }
+
+  // "re-arm on launch", honored only after re-validation (spec: fresh gateway RA + risk
+  // profile still present + clean detection). If re-detection needs a human decision (no
+  // fresh gateway, no other senders, or multiple gateways), we surface the normal confirm/
+  // unavailable state instead of silently arming.
+  func attemptReArmOnLaunch(iface: String, hasGlobalIPv6: Bool, routerCount: Int) {
+    guard autoArmOnLaunch else { return }
+    // Use the synchronous check here, not `refreshVisibility` — that writes `isVisible` via
+    // `DispatchQueue.main.async`, so reading it right back on this call site would race the
+    // write and could see the stale value from before this launch.
+    guard Self.currentlyVisible(hasGlobalIPv6: hasGlobalIPv6, routerCount: routerCount) else { return }
+    DispatchQueue.main.async {
+      self.isVisible = true
+      self.uiState = .preparing
+    }
+    workQueue.async { [weak self] in
+      guard let self else { return }
+      let result = RAProtectionWrapper.run(subcommand: "detect", arguments: [iface])
+      guard result.exitCode == 0, let detect = RAProtectionWrapper.parseDetect(result.stdout) else {
+        DispatchQueue.main.async { self.uiState = .off }
+        return
+      }
+      let precheck = RAProtectionGating.ArmingPrecheck(
+        gatewayFreshnessSeconds: detect.gateways.isEmpty ? nil : Double(RAProtectionWrapper.defaultSniffSeconds),
+        otherSendersCount: detect.others,
+        gatewayCount: detect.gateways.count)
+      let decision = RAProtectionGating.evaluateArming(precheck)
+      switch decision {
+      case .allowed:
+        DispatchQueue.main.async { self.confirmArm(iface: iface, acknowledgedMultiGateway: false) }
+      case .allowedNeedsMultiGatewayConfirmation:
+        // Multiple gateways always need an explicit human confirmation (per the design spec's
+        // edge case) — auto-re-arm-on-launch must not skip that, so surface the sheet instead.
+        DispatchQueue.main.async {
+          self.uiState = .armingConfirm(detect, needsMultiGatewayConfirmation: true)
+        }
+      case .refusedNoFreshGateway, .refusedNoOtherSenders:
+        // Re-validation failed — per the spec, "only after re-validation" means we do NOT
+        // force any arming UI on the user at launch; fall back to idle and let them use
+        // "Prepare..." manually. (The earlier `guard decision == .allowed` shortcut here used
+        // to route BOTH refusal cases into `.armingConfirm(..., needsMultiGatewayConfirmation:
+        // false)`, which left an enabled "Arm" button for a precheck that said to refuse.)
+        DispatchQueue.main.async { self.uiState = .off }
+      }
+    }
+  }
+}
