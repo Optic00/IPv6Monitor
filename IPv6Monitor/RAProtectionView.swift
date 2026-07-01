@@ -58,7 +58,12 @@ struct RAProtectionPanel: View {
         Button(NSLocalizedString("OK", comment: "")) { controller.acknowledgeAutoOff() }
       }
     case .unavailable(let reason):
-      Text(reason).font(.caption).foregroundColor(.secondary)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(reason).font(.caption).foregroundColor(.secondary)
+        Button(NSLocalizedString("Try again", comment: "")) {
+          controller.beginArmingFlow(iface: interface)
+        }
+      }
     }
   }
 }

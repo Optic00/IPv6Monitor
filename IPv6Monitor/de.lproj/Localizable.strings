@@ -64,6 +64,7 @@
 "OK" = "OK";
 "No gateway RA seen — nothing to whitelist." = "Kein Gateway-RA gesehen — nichts zum Whitelisten.";
 "No other RA senders currently seen — nothing to block." = "Aktuell keine anderen RA-Sender gesehen — nichts zu blockieren.";
+"Try again" = "Nochmal versuchen";
 "Arming failed." = "Aktivierung fehlgeschlagen.";
 "Detection failed." = "Erkennung fehlgeschlagen.";
 "The gateway became unreachable immediately after arming." = "Das Gateway war direkt nach der Aktivierung nicht mehr erreichbar.";
