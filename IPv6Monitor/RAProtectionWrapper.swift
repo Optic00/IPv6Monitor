@@ -38,3 +38,23 @@ enum RAProtectionWrapper {
     return DetectResult(gateways: gateways, others: others)
   }
 }
+
+extension RAProtectionWrapper {
+  // owner must be uid 0 and neither group- nor other-writable, for the path and every parent.
+  static func pathIsSafe(_ path: String) -> Bool {
+    let fm = FileManager.default
+    var current = (path as NSString).standardizingPath
+    while true {
+      guard let attrs = try? fm.attributesOfItem(atPath: current) else { return false }
+      guard let owner = attrs[.ownerAccountID] as? NSNumber, owner.intValue == 0 else { return false }
+      guard let perm = attrs[.posixPermissions] as? NSNumber else { return false }
+      let mode = perm.intValue
+      if mode & 0o002 != 0 { return false }
+      if mode & 0o020 != 0 { return false }
+      if current == "/" { break }
+      let parent = (current as NSString).deletingLastPathComponent
+      current = parent.isEmpty ? "/" : parent
+    }
+    return true
+  }
+}
