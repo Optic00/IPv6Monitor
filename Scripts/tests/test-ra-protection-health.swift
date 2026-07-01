@@ -27,6 +27,16 @@ func check<T: Equatable>(_ desc: String, _ expected: T, _ actual: T) {
       RAProtectionHealth.evaluate(
         active: true, ifaceMatches: true, now: now,
         lastPassIncreaseAt: now.addingTimeInterval(-RAProtectionHealth.stallThresholdSeconds - 1)))
+    check(
+      "anchor gone wins over interface mismatch and stall", RAProtectionHealth.Verdict.autoOffAnchorGone,
+      RAProtectionHealth.evaluate(
+        active: false, ifaceMatches: false, now: now,
+        lastPassIncreaseAt: now.addingTimeInterval(-RAProtectionHealth.stallThresholdSeconds - 1)))
+    check(
+      "interface change wins over stall when anchor active", RAProtectionHealth.Verdict.autoOffInterfaceChanged,
+      RAProtectionHealth.evaluate(
+        active: true, ifaceMatches: false, now: now,
+        lastPassIncreaseAt: now.addingTimeInterval(-RAProtectionHealth.stallThresholdSeconds - 1)))
     exit(Int32(failures))
   }
 }
