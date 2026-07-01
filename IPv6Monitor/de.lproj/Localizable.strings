@@ -78,3 +78,5 @@
 "RA Protection: ⚠️ auto-off" = "RA-Schutz: ⚠️ automatisch aus";
 "RA Protection: off" = "RA-Schutz: aus";
 "RA Protection: Turn off" = "RA-Schutz: Ausschalten";
+"Adopted already-active RA protection on %@" = "Bereits aktiven RA-Schutz auf %@ übernommen";
+"Re-arm automatically on launch" = "Beim Start automatisch wieder aktivieren";

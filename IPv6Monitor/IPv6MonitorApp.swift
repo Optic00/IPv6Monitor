@@ -243,6 +243,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   lazy var raProtection: RAProtectionController = RAProtectionController(logger: self.logger)
   private var raProtectionCancellable: AnyCancellable?
+  private var raProtectionHealthTimer: Timer?
 
   // AP3b: Single-Flight. Alle Route-Checks/Reparaturen laufen seriell auf dieser Queue,
   // damit sich Pfad-Events, Wakeup- und manuelle Checks nicht überlappen
@@ -295,6 +296,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       DispatchQueue.main.async { self?.constructMenu() }
     }
 
+    // pollHealth is otherwise only driven by NWPath events/wake/manual checks, which may not
+    // fire often enough to catch a silent gateway-RA stall before the route itself dies (the
+    // exact failure this health check exists to catch ahead of time). Poll it independently.
+    raProtectionHealthTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) {
+      [weak self] _ in
+      guard let self, let interface = self.currentInterface else { return }
+      self.raProtection.pollHealth(currentInterface: interface)
+    }
+
     constructMenu()
   }
 
@@ -320,6 +330,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     captureStartupBaseline(interface: interface)
 
     checkRoute(logSuccess: false)
+
+    raProtection.reconcileOrReArmOnLaunch(
+      iface: interface,
+      hasGlobalIPv6: hasGlobalIPv6(interface: interface),
+      routerCount: ipv6RouterCensus(interface: interface).total)
 
     pathMonitor = NWPathMonitor()
     pathMonitor?.pathUpdateHandler = { [weak self] path in

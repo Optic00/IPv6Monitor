@@ -53,6 +53,8 @@ struct RAProtectionPanel: View {
             format: NSLocalizedString("Active on %@ — passed: %d, blocked: %d", comment: ""),
             status.iface, status.pass, status.block))
         Button(NSLocalizedString("Turn off", comment: ""), role: .destructive) { controller.disarm() }
+        Toggle(NSLocalizedString("Re-arm automatically on launch", comment: ""), isOn: $controller.autoArmOnLaunch)
+          .font(.caption)
       }
     case .autoOffNotice(let reason, _):
       VStack(alignment: .leading, spacing: 4) {

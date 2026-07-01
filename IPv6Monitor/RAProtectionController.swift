@@ -32,9 +32,10 @@ final class RAProtectionController: ObservableObject {
     UserDefaults.standard.set(true, forKey: everLostRouteKey)
   }
 
-  var autoArmOnLaunch: Bool {
-    get { UserDefaults.standard.bool(forKey: Self.autoArmOnLaunchKey) }
-    set { UserDefaults.standard.set(newValue, forKey: Self.autoArmOnLaunchKey) }
+  @Published var autoArmOnLaunch: Bool = UserDefaults.standard.bool(
+    forKey: RAProtectionController.autoArmOnLaunchKey
+  ) {
+    didSet { UserDefaults.standard.set(autoArmOnLaunch, forKey: Self.autoArmOnLaunchKey) }
   }
 
   // Whether the risk-profile gate says the feature should be *offered* right now. Views/menus
@@ -286,6 +287,36 @@ extension RAProtectionController {
         // to route BOTH refusal cases into `.armingConfirm(..., needsMultiGatewayConfirmation:
         // false)`, which left an enabled "Arm" button for a precheck that said to refuse.)
         DispatchQueue.main.async { self.uiState = .off }
+      }
+    }
+  }
+
+  // Launch-time entry point: first reconciles with whatever the wrapper reports right now —
+  // adopting an already-active anchor into `.active` so a filter that outlived an app
+  // restart/crash isn't silently unmonitored and hidden from the app — and only falls through
+  // to the existing re-arm-on-launch logic if nothing is currently active on this interface.
+  func reconcileOrReArmOnLaunch(iface: String, hasGlobalIPv6: Bool, routerCount: Int) {
+    workQueue.async { [weak self] in
+      guard let self else { return }
+      let result = RAProtectionWrapper.run(subcommand: "status")
+      if result.exitCode == 0, let status = RAProtectionWrapper.parseStatus(result.stdout),
+        status.active, status.iface == iface
+      {
+        self.armedIface = iface
+        self.lastKnownPass = status.pass
+        self.lastPassIncreaseAt = Date()
+        DispatchQueue.main.async {
+          self.logger.add(
+            String(
+              format: NSLocalizedString("Adopted already-active RA protection on %@", comment: ""),
+              iface), type: .info)
+          self.uiState = .active(status)
+        }
+        return
+      }
+      DispatchQueue.main.async {
+        self.attemptReArmOnLaunch(
+          iface: iface, hasGlobalIPv6: hasGlobalIPv6, routerCount: routerCount)
       }
     }
   }
