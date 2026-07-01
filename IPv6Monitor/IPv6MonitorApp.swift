@@ -241,6 +241,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   var logger = Logger()
 
+  lazy var raProtection: RAProtectionController = RAProtectionController(logger: self.logger)
+  private var raProtectionCancellable: AnyCancellable?
+
   // AP3b: Single-Flight. Alle Route-Checks/Reparaturen laufen seriell auf dieser Queue,
   // damit sich Pfad-Events, Wakeup- und manuelle Checks nicht überlappen
   // (sonst doppelte `route add`s, doppelte Snapshots, unleserliche Logs).
@@ -286,6 +289,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       startMonitoring()
     } else {
       openInterfaceSelectionWindow()
+    }
+
+    raProtectionCancellable = raProtection.objectWillChange.sink { [weak self] _ in
+      DispatchQueue.main.async { self?.constructMenu() }
     }
 
     constructMenu()
@@ -420,6 +427,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     return res.isEmpty ? nil : res
   }
 
+  // Same check as InterfaceSelectionView.loadInterfaces(), but for the currently monitored
+  // interface at runtime (used to gate RA-protection visibility).
+  func hasGlobalIPv6(interface: String) -> Bool {
+    guard let store = SCDynamicStoreCreate(nil, "IPv6Monitor" as CFString, nil, nil),
+      let dict = SCDynamicStoreCopyValue(store, "State:/Network/Interface/\(interface)/IPv6" as CFString)
+        as? [String: Any],
+      let addresses = dict["Addresses"] as? [String]
+    else { return false }
+    return addresses.contains { !$0.starts(with: "fe80") && $0 != "::1" }
+  }
+
   // Öffentlicher Einstieg: serialisiert jeden Check/Repair auf der Repair-Queue (AP3b).
   // logSuccess == true  -> "Route check: OK" immer loggen (manueller Check).
   // logSuccess == false -> nur bei Statuswechsel loggen (Pfad-/Wakeup-Events, kein Spam).
@@ -439,6 +457,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Router-Census loggen, sobald sich die Anzahl/Zusammensetzung der RA-Sender ändert.
     logCensusIfChanged(interface: interface, force: false)
+
+    raProtection.refreshVisibility(
+      hasGlobalIPv6: hasGlobalIPv6(interface: interface),
+      routerCount: ipv6RouterCensus(interface: interface).total)
+    raProtection.pollHealth(currentInterface: interface)
 
     // AP4b: strukturierte Auswertung von `route -n get` statt brüchigem grep.
     let routeValid = routeIsValid(expectedRouter: rIP, interface: interface)
@@ -463,6 +486,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       if changed {
         logger.add(
           NSLocalizedString("❌ Route lost! Starting repair...", comment: ""), type: .error)
+        RAProtectionController.markRouteLossEverOccurred()
         // AP6: RA-Zustand im Verlustmoment festhalten (datiert im Logfile) — Datengrundlage,
         // um die „high-pref läuft ab"-Hypothese über viele Verluste zu prüfen.
         logger.add(raStateSummary(interface: interface, tag: "RA@loss"), type: .warning)
@@ -624,7 +648,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // IPv4 Router ermitteln
     let v4Router = findIPv4Router(interface: iface) ?? "-"
 
-    let contentView = ConnectivityView(routerIPv6: rIP, routerIPv4: v4Router, interface: iface)
+    let contentView = ConnectivityView(
+      routerIPv6: rIP, routerIPv4: v4Router, interface: iface, raProtection: self.raProtection)
 
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 580, height: 620),
@@ -1056,6 +1081,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
           title: NSLocalizedString("Change Interface...", comment: ""),
           action: #selector(self.changeInterface), keyEquivalent: "i"))
 
+      if self.raProtection.showsControls {
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: self.raProtectionMenuStatus(), action: nil, keyEquivalent: ""))
+        if case .active = self.raProtection.uiState {
+          menu.addItem(
+            NSMenuItem(
+              title: NSLocalizedString("RA Protection: Turn off", comment: ""),
+              action: #selector(self.disarmRAProtection), keyEquivalent: ""))
+        }
+      }
+
       menu.addItem(NSMenuItem.separator())
       menu.addItem(
         NSMenuItem(
@@ -1067,6 +1103,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   @objc func changeInterface() { openInterfaceSelectionWindow() }
+
+  private func raProtectionMenuStatus() -> String {
+    switch raProtection.uiState {
+    case .active: return NSLocalizedString("RA Protection: active", comment: "")
+    case .preparing, .armingConfirm: return NSLocalizedString("RA Protection: checking", comment: "")
+    case .autoOffNotice: return NSLocalizedString("RA Protection: ⚠️ auto-off", comment: "")
+    default: return NSLocalizedString("RA Protection: off", comment: "")
+    }
+  }
+
+  @objc func disarmRAProtection() {
+    raProtection.disarm()
+  }
 }
 
 class WindowDelegateHelper: NSObject, NSWindowDelegate {
@@ -1161,6 +1210,7 @@ struct ConnectivityView: View {
   var routerIPv6: String
   var routerIPv4: String
   var interface: String
+  @ObservedObject var raProtection: RAProtectionController
 
   @State private var targets: [PingTarget] = []
   @State private var results: [PingResult] = []
@@ -1169,6 +1219,8 @@ struct ConnectivityView: View {
   var body: some View {
     VStack(spacing: 0) {
       raPanel
+
+      RAProtectionPanel(controller: raProtection, interface: interface)
 
       Divider()
 
