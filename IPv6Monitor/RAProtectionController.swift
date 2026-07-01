@@ -71,3 +71,109 @@ final class RAProtectionController: ObservableObject {
     DispatchQueue.main.async { self.uiState = .off }
   }
 }
+
+extension RAProtectionController {
+  func beginArmingFlow(iface: String) {
+    DispatchQueue.main.async { self.uiState = .preparing }
+    workQueue.async { [weak self] in
+      guard let self else { return }
+      let result = RAProtectionWrapper.run(subcommand: "detect", arguments: [iface])
+      guard result.exitCode == 0, let detect = RAProtectionWrapper.parseDetect(result.stdout) else {
+        DispatchQueue.main.async {
+          self.uiState = .unavailable(
+            reason: result.stderr.isEmpty ? NSLocalizedString("Detection failed.", comment: "") : result.stderr)
+        }
+        return
+      }
+      let precheck = RAProtectionGating.ArmingPrecheck(
+        gatewayFreshnessSeconds: detect.gateways.isEmpty ? nil : Double(RAProtectionWrapper.defaultSniffSeconds),
+        otherSendersCount: detect.others,
+        gatewayCount: detect.gateways.count)
+      let decision = RAProtectionGating.evaluateArming(precheck)
+      DispatchQueue.main.async {
+        switch decision {
+        case .allowed:
+          self.uiState = .armingConfirm(detect, needsMultiGatewayConfirmation: false)
+        case .allowedNeedsMultiGatewayConfirmation:
+          self.uiState = .armingConfirm(detect, needsMultiGatewayConfirmation: true)
+        case .refusedNoFreshGateway:
+          self.uiState = .unavailable(
+            reason: NSLocalizedString("No gateway RA seen — nothing to whitelist.", comment: ""))
+        case .refusedNoOtherSenders:
+          self.uiState = .unavailable(
+            reason: NSLocalizedString("No other RA senders currently seen — nothing to block.", comment: ""))
+        }
+      }
+    }
+  }
+
+  func confirmArm(iface: String, acknowledgedMultiGateway: Bool) {
+    guard case let .armingConfirm(detect, needsConfirm) = uiState else { return }
+    if needsConfirm && !acknowledgedMultiGateway { return }
+    // `evaluateArming` only reaches `.armingConfirm` when `gatewayFreshnessSeconds != nil`,
+    // which is only set when `detect.gateways` is non-empty — so this is always populated here.
+    guard let gateway = detect.gateways.first else { return }
+    DispatchQueue.main.async { self.uiState = .preparing }
+    workQueue.async { [weak self] in
+      guard let self else { return }
+      // Ping the SAME target before and after (per the design spec) — comparing against
+      // `on`'s `default_route` field would mix two different signals (route-table presence
+      // vs. actual reachability) and could miss a gateway that's unreachable despite a route.
+      let preOk = self.pingGateway(gateway, iface: iface)
+      let result = RAProtectionWrapper.run(subcommand: "on", arguments: [iface])
+      guard result.exitCode == 0, let status = RAProtectionWrapper.parseStatus(result.stdout) else {
+        DispatchQueue.main.async {
+          self.uiState = .unavailable(
+            reason: result.stderr.isEmpty ? NSLocalizedString("Arming failed.", comment: "") : result.stderr)
+        }
+        return
+      }
+      let postOk = self.pingGateway(gateway, iface: iface)
+      if preOk && !postOk {
+        _ = RAProtectionWrapper.run(subcommand: "off")
+        DispatchQueue.main.async {
+          self.logger.add("⚠️ RA protection auto-off: gateway unreachable right after arming.", type: .error)
+          self.uiState = .autoOffNotice(
+            reason: NSLocalizedString(
+              "The gateway became unreachable immediately after arming.", comment: ""),
+            redetect: nil)
+        }
+        return
+      }
+      self.armedIface = iface
+      self.lastKnownPass = status.pass
+      self.lastPassIncreaseAt = Date()
+      DispatchQueue.main.async {
+        self.logger.add(
+          String(format: NSLocalizedString("RA protection armed on %@", comment: ""), iface), type: .success)
+        self.uiState = .active(status)
+      }
+    }
+  }
+
+  // Manual-timeout ping, mirroring ConnectivityView.runPingCommand's approach (no reliance on
+  // a `-t`/`-W` timeout flag whose exact semantics differ between ping/ping6 on macOS).
+  func pingGateway(_ gateway: String, iface: String, timeout: TimeInterval = 2.0) -> Bool {
+    let target = gateway.contains("%") ? gateway : "\(gateway)%\(iface)"
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/sbin/ping6")
+    task.arguments = ["-c", "1", "-n", target]
+    task.standardOutput = Pipe()
+    task.standardError = Pipe()
+    do {
+      try task.run()
+    } catch {
+      return false
+    }
+    let start = Date()
+    while task.isRunning {
+      if Date().timeIntervalSince(start) > timeout {
+        task.terminate()
+        break
+      }
+      usleep(20_000)
+    }
+    task.waitUntilExit()
+    return task.terminationStatus == 0
+  }
+}
