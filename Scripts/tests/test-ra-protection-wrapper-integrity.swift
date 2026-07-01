@@ -16,6 +16,16 @@ func check<T: Equatable>(_ desc: String, _ expected: T, _ actual: T) {
     check("root-owned system path is safe", true, RAProtectionWrapper.pathIsSafe("/usr/bin/true"))
     check("nonexistent path is unsafe", false, RAProtectionWrapper.pathIsSafe("/no/such/path/here"))
 
+    // Test relative path resolution: create a subdirectory, change cwd to parent, test relative path
+    let testSubdir = tmp + "/testsubdir"
+    try? FileManager.default.createDirectory(atPath: testSubdir, withIntermediateDirectories: true)
+    let originalCwd = FileManager.default.currentDirectoryPath
+    FileManager.default.changeCurrentDirectoryPath(tmp)
+    let relativeResult = RAProtectionWrapper.pathIsSafe("testsubdir")
+    let absoluteResult = RAProtectionWrapper.pathIsSafe(testSubdir)
+    FileManager.default.changeCurrentDirectoryPath(originalCwd)
+    check("relative path resolves same as absolute path", absoluteResult, relativeResult)
+
     try? FileManager.default.removeItem(atPath: tmp)
     exit(Int32(failures))
   }

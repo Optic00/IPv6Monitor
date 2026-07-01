@@ -43,7 +43,12 @@ extension RAProtectionWrapper {
   // owner must be uid 0 and neither group- nor other-writable, for the path and every parent.
   static func pathIsSafe(_ path: String) -> Bool {
     let fm = FileManager.default
-    var current = (path as NSString).standardizingPath
+    // Resolve relative paths to absolute (anchored at cwd), matching bash's `cd ... && pwd` behavior
+    var absolutePath = path
+    if !path.hasPrefix("/") {
+      absolutePath = fm.currentDirectoryPath + "/" + path
+    }
+    var current = (absolutePath as NSString).standardizingPath
     while true {
       guard let attrs = try? fm.attributesOfItem(atPath: current) else { return false }
       guard let owner = attrs[.ownerAccountID] as? NSNumber, owner.intValue == 0 else { return false }
