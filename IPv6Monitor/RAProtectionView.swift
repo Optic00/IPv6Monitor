@@ -36,7 +36,11 @@ struct RAProtectionPanel: View {
         controller.beginArmingFlow(iface: interface)
       }
     case .preparing:
-      ProgressView(NSLocalizedString("Checking network...", comment: ""))
+      VStack(alignment: .leading, spacing: 4) {
+        ProgressView(NSLocalizedString("Checking network...", comment: ""))
+        Text(NSLocalizedString("This sniffs traffic for up to 60 seconds — it hasn't stalled.", comment: ""))
+          .font(.caption).foregroundColor(.secondary)
+      }
     case .armingConfirm(let detect, let needsConfirm):
       RAProtectionConfirmSheet(
         detect: detect, needsMultiGatewayConfirmation: needsConfirm, interface: interface,

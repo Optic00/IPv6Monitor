@@ -52,6 +52,7 @@
 "RA Protection (advanced)" = "RA-Schutz (erweitert)";
 "Prepare..." = "Vorbereiten...";
 "Checking network..." = "Netzwerk wird geprüft...";
+"This sniffs traffic for up to 60 seconds — it hasn't stalled." = "Dies horcht bis zu 60 Sekunden auf den Netzwerkverkehr — kein Hänger.";
 "Blocks incoming IPv6 Router Advertisements on this interface except from the gateway. May affect Thread/Matter/ULA routes this Mac learns. Applies to this interface only. Reboot or Off removes it." = "Blockiert eingehende IPv6 Router Advertisements auf diesem Interface außer vom Gateway. Kann Thread/Matter/ULA-Routen beeinflussen, die dieser Mac lernt. Gilt nur für dieses Interface. Neustart oder Aus entfernt die Regel.";
 "Detected gateway(s): %@" = "Erkannte(s) Gateway(s): %@";
 "Other RA senders currently seen: %d" = "Andere aktuell gesehene RA-Sender: %d";
