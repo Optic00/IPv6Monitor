@@ -36,11 +36,7 @@ struct RAProtectionPanel: View {
         controller.beginArmingFlow(iface: interface)
       }
     case .preparing:
-      VStack(alignment: .leading, spacing: 4) {
-        ProgressView(NSLocalizedString("Checking network...", comment: ""))
-        Text(NSLocalizedString("This sniffs traffic for up to 60 seconds — it hasn't stalled.", comment: ""))
-          .font(.caption).foregroundColor(.secondary)
-      }
+      RAProtectionPreparingView()
     case .armingConfirm(let detect, let needsConfirm):
       RAProtectionConfirmSheet(
         detect: detect, needsMultiGatewayConfirmation: needsConfirm, interface: interface,
@@ -63,6 +59,29 @@ struct RAProtectionPanel: View {
       }
     case .unavailable(let reason):
       Text(reason).font(.caption).foregroundColor(.secondary)
+    }
+  }
+}
+
+// Live progress bar for the ~60s wrapper sniff window. `@State private var start` is only
+// (re-)initialized when this view's identity is (re-)created — i.e. fresh each time `.preparing`
+// is entered — not on every body re-evaluation, so the elapsed time is accurate across renders.
+private struct RAProtectionPreparingView: View {
+  @State private var start = Date()
+  private let duration: TimeInterval = 60
+
+  var body: some View {
+    TimelineView(.periodic(from: start, by: 1)) { context in
+      let elapsed = min(context.date.timeIntervalSince(start), duration)
+      VStack(alignment: .leading, spacing: 4) {
+        ProgressView(value: elapsed, total: duration)
+        Text(
+          String(
+            format: NSLocalizedString("Checking network... (%ds of %ds)", comment: ""),
+            Int(elapsed), Int(duration))
+        )
+        .font(.caption).foregroundColor(.secondary)
+      }
     }
   }
 }
